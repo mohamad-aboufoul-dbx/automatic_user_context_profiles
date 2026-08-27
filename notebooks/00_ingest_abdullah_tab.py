@@ -5,7 +5,7 @@
 # MAGIC Loads the 'Abdullah' tab from the 'Chatbot conversations' Google Sheet
 # MAGIC (spreadsheet_id=1NCFFYeCPs-TS3YA6r3Y9y8p0LtUy2cY0-qa8CMl1iEI, gid=1354471250)
 # MAGIC into UC table raw_conversations_abdullah_said via idempotent MERGE on row_hash.
-# MAGIC Falls back to a CSV at CSV_LOCAL_DBFS when the Sheets API is unreachable.
+# MAGIC Falls back to a CSV in a UC Volume (CSV_VOLUME) when the Sheets API is unreachable.
 # MAGIC
 # MAGIC Invariants asserted (all hard failures):
 # MAGIC   - Source row count in [240, 260] (~247 expected)
@@ -31,8 +31,10 @@ TABLE           = f"{CATALOG}.{SCHEMA}.raw_conversations_abdullah_said"
 SOURCE_NAME     = "chatbot_conversations_abdullah"
 SPREADSHEET     = "1NCFFYeCPs-TS3YA6r3Y9y8p0LtUy2cY0-qa8CMl1iEI"
 RANGE_NAME      = "Abdullah"
-# CSV fallback — upload data/raw_abdullah_tab.csv to this DBFS path before running.
-CSV_LOCAL_DBFS  = "/dbfs/tmp/raw_abdullah_tab.csv"
+# CSV fallback — upload data/raw_abdullah_tab.csv to this UC Volume path before running.
+# Public DBFS root is disabled on this workspace, so a Unity Catalog Volume is the
+# supported staging area. run_day1.sh creates the volume and uploads the file.
+CSV_VOLUME      = "/Volumes/ai_fde_hackathon_catalog/automatic_user_context_profiles/raw/raw_abdullah_tab.csv"
 USERNAME_FILTER = "abdullah.said"
 
 # Expected row count bounds (hard assertion).
@@ -96,11 +98,11 @@ except Exception as exc:
 
 if records is None:
     try:
-        records = fetch_from_csv(CSV_LOCAL_DBFS)
-        source_path = CSV_LOCAL_DBFS
-        print(f"CSV fallback ({CSV_LOCAL_DBFS}): {len(records)} rows")
+        records = fetch_from_csv(CSV_VOLUME)
+        source_path = CSV_VOLUME
+        print(f"CSV fallback ({CSV_VOLUME}): {len(records)} rows")
     except Exception as exc:
-        errors.append(f"CSV {CSV_LOCAL_DBFS}: {exc}")
+        errors.append(f"CSV {CSV_VOLUME}: {exc}")
 
 if records is None:
     raise RuntimeError("All data sources failed:\n" + "\n".join(errors))

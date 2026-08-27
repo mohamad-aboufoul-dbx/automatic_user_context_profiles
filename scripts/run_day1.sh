@@ -18,6 +18,12 @@ SPARK_VERSION="15.4.x-scala2.12"
 NODE_TYPE="i3.xlarge"
 NUM_WORKERS=1      # standard single-worker cluster (no conflicting singleNode profile)
 
+# Unity Catalog staging target (public DBFS root is disabled on this workspace).
+CATALOG="ai_fde_hackathon_catalog"
+SCHEMA="automatic_user_context_profiles"
+VOLUME="raw"
+CSV_VOLUME_DEST="dbfs:/Volumes/${CATALOG}/${SCHEMA}/${VOLUME}/raw_abdullah_tab.csv"
+
 # ---------------------------------------------------------------------------
 # helpers
 # ---------------------------------------------------------------------------
@@ -42,14 +48,37 @@ ME=$(databricks current-user me --profile "$PROFILE" \
 echo "    Authenticated as: $ME"
 
 # ---------------------------------------------------------------------------
-# 1. Upload CSV fallback to DBFS
+# 1. Ensure UC schema + volume exist, then upload CSV fallback to the volume
 # ---------------------------------------------------------------------------
-echo "[1] Uploading CSV fallback to DBFS..."
+# Public DBFS root is disabled on this workspace, so the CSV is staged in a
+# Unity Catalog managed volume. Schema and volume must exist BEFORE the upload.
+echo "[1] Ensuring UC schema + volume, then uploading CSV..."
 CSV_SRC="$REPO_ROOT/data/raw_abdullah_tab.csv"
 [ -f "$CSV_SRC" ] || die "CSV not found: $CSV_SRC"
-databricks fs cp "$CSV_SRC" "dbfs:/tmp/raw_abdullah_tab.csv" \
-  --profile "$PROFILE" --overwrite
-echo "    Uploaded: dbfs:/tmp/raw_abdullah_tab.csv"
+
+# Schema (UC control-plane calls are synchronous; create only if missing).
+if databricks schemas get "${CATALOG}.${SCHEMA}" --profile "$PROFILE" >/dev/null 2>&1; then
+    echo "    Schema exists: ${CATALOG}.${SCHEMA}"
+else
+    databricks schemas create "$SCHEMA" "$CATALOG" --profile "$PROFILE" >/dev/null \
+      || die "Failed to create schema ${CATALOG}.${SCHEMA}"
+    echo "    Schema created: ${CATALOG}.${SCHEMA}"
+fi
+
+# Managed volume (create only if missing).
+if databricks volumes read "${CATALOG}.${SCHEMA}.${VOLUME}" --profile "$PROFILE" >/dev/null 2>&1; then
+    echo "    Volume exists: ${CATALOG}.${SCHEMA}.${VOLUME}"
+else
+    databricks volumes create "$CATALOG" "$SCHEMA" "$VOLUME" MANAGED --profile "$PROFILE" >/dev/null \
+      || die "Failed to create volume ${CATALOG}.${SCHEMA}.${VOLUME}"
+    echo "    Volume created: ${CATALOG}.${SCHEMA}.${VOLUME}"
+fi
+
+# Upload CSV to the volume (fs cp routes /Volumes paths through the Files API).
+databricks fs cp "$CSV_SRC" "$CSV_VOLUME_DEST" \
+  --profile "$PROFILE" --overwrite \
+  || die "Failed to upload CSV to $CSV_VOLUME_DEST"
+echo "    Uploaded: $CSV_VOLUME_DEST"
 
 # ---------------------------------------------------------------------------
 # 2. Import notebooks to workspace
