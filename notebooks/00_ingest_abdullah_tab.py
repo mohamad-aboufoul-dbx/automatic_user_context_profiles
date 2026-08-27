@@ -5,45 +5,53 @@
 # MAGIC Loads the 'Abdullah' tab from the 'Chatbot conversations' Google Sheet
 # MAGIC (spreadsheet_id=1NCFFYeCPs-TS3YA6r3Y9y8p0LtUy2cY0-qa8CMl1iEI, gid=1354471250)
 # MAGIC into UC table raw_conversations_abdullah_said via idempotent MERGE on row_hash.
-# MAGIC Falls back to a local CSV when the Sheets API is unreachable.
+# MAGIC Falls back to a CSV at CSV_LOCAL_DBFS when the Sheets API is unreachable.
+# MAGIC
+# MAGIC Invariants asserted (all hard failures):
+# MAGIC   - Source row count in [240, 260] (~247 expected)
+# MAGIC   - All rows username='abdullah.said' after filter
+# MAGIC   - No unparseable datetimes
+# MAGIC   - No empty conversation_ids
+# MAGIC   - Source row_hashes unique after dedup
+# MAGIC   - Post-MERGE row_hashes unique in target table
 
 # COMMAND ----------
 
 import hashlib
-import os
 from datetime import datetime, timezone
+
 from pyspark.sql import functions as F
 from pyspark.sql.types import (
     StructType, StructField, StringType, LongType, TimestampType
 )
 
-CATALOG      = "ai_fde_hackathon_catalog"
-SCHEMA       = "automatic_user_context_profiles"
-TABLE        = f"{CATALOG}.{SCHEMA}.raw_conversations_abdullah_said"
-SOURCE_NAME  = "chatbot_conversations_abdullah"
-SPREADSHEET  = "1NCFFYeCPs-TS3YA6r3Y9y8p0LtUy2cY0-qa8CMl1iEI"
-RANGE_NAME   = "Abdullah"
-# CSV fallback — place raw_abdullah_tab.csv here if Sheets API is unreachable
-CSV_FALLBACK = "/Volumes/ai_fde_hackathon_catalog/automatic_user_context_profiles/raw/raw_abdullah_tab.csv"
-CSV_LOCAL    = "/dbfs/tmp/raw_abdullah_tab.csv"   # for dbutils.fs.cp from local
+CATALOG         = "ai_fde_hackathon_catalog"
+SCHEMA          = "automatic_user_context_profiles"
+TABLE           = f"{CATALOG}.{SCHEMA}.raw_conversations_abdullah_said"
+SOURCE_NAME     = "chatbot_conversations_abdullah"
+SPREADSHEET     = "1NCFFYeCPs-TS3YA6r3Y9y8p0LtUy2cY0-qa8CMl1iEI"
+RANGE_NAME      = "Abdullah"
+# CSV fallback — upload data/raw_abdullah_tab.csv to this DBFS path before running.
+CSV_LOCAL_DBFS  = "/dbfs/tmp/raw_abdullah_tab.csv"
 USERNAME_FILTER = "abdullah.said"
+
+# Expected row count bounds (hard assertion).
+# Adjust only if the source sheet is intentionally extended.
+COUNT_LO = 240
+COUNT_HI = 260
 
 # COMMAND ----------
 # MAGIC %md ## 1. Fetch raw rows (Sheets API → CSV fallback)
 
 def fetch_from_sheets() -> list[dict]:
-    """Returns list of raw dicts from the Google Sheets API."""
-    import urllib.request, urllib.error, json
-    # Use google-auth ADC token if available, else try instance metadata
-    try:
-        import subprocess
-        token = subprocess.check_output(
-            ["gcloud", "auth", "application-default", "print-access-token"],
-            stderr=subprocess.DEVNULL
-        ).decode().strip()
-    except Exception as e:
-        raise RuntimeError(f"Could not get gcloud token: {e}")
-
+    """Fetch Abdullah tab from Google Sheets using ADC token."""
+    import urllib.request, json, subprocess
+    token = subprocess.check_output(
+        ["gcloud", "auth", "application-default", "print-access-token"],
+        stderr=subprocess.DEVNULL,
+    ).decode().strip()
+    if not token:
+        raise RuntimeError("Empty token from gcloud ADC")
     url = (
         f"https://sheets.googleapis.com/v4/spreadsheets/{SPREADSHEET}"
         f"/values/{RANGE_NAME}"
@@ -54,12 +62,10 @@ def fetch_from_sheets() -> list[dict]:
     })
     with urllib.request.urlopen(req, timeout=30) as resp:
         data = json.loads(resp.read())
-
     rows_raw = data.get("values", [])
     if not rows_raw:
         raise ValueError("Empty response from Sheets API")
-
-    header = rows_raw[0]
+    header  = rows_raw[0]
     records = []
     for row in rows_raw[1:]:
         padded = row + [""] * (len(header) - len(row))
@@ -68,7 +74,7 @@ def fetch_from_sheets() -> list[dict]:
 
 
 def fetch_from_csv(path: str) -> list[dict]:
-    """Returns list of raw dicts from a CSV file."""
+    """Load CSV produced by the Google Sheets export."""
     import csv
     records = []
     with open(path, newline="", encoding="utf-8") as f:
@@ -77,38 +83,32 @@ def fetch_from_csv(path: str) -> list[dict]:
     return records
 
 
-# Try Sheets API first, fall back to CSV
-records = None
+records: list[dict] | None = None
 source_path = "sheets_api"
-errors = []
+errors: list[str] = []
 
 try:
     records = fetch_from_sheets()
-    print(f"Fetched {len(records)} rows from Sheets API")
-except Exception as e:
-    errors.append(f"Sheets API: {e}")
-    print(f"Sheets API unavailable: {e}")
+    print(f"Sheets API: {len(records)} rows")
+except Exception as exc:
+    errors.append(f"Sheets API: {exc}")
+    print(f"Sheets API unavailable: {exc}")
 
 if records is None:
-    for fallback in [CSV_FALLBACK, CSV_LOCAL]:
-        try:
-            records = fetch_from_csv(fallback)
-            source_path = fallback
-            print(f"Loaded {len(records)} rows from CSV fallback: {fallback}")
-            break
-        except Exception as e:
-            errors.append(f"CSV {fallback}: {e}")
+    try:
+        records = fetch_from_csv(CSV_LOCAL_DBFS)
+        source_path = CSV_LOCAL_DBFS
+        print(f"CSV fallback ({CSV_LOCAL_DBFS}): {len(records)} rows")
+    except Exception as exc:
+        errors.append(f"CSV {CSV_LOCAL_DBFS}: {exc}")
 
 if records is None:
-    raise RuntimeError(
-        "Both Sheets API and CSV fallback failed:\n" + "\n".join(errors)
-    )
+    raise RuntimeError("All data sources failed:\n" + "\n".join(errors))
 
-print(f"Source: {source_path}")
-print(f"Raw row count: {len(records)}")
+print(f"Source: {source_path}  |  raw rows: {len(records)}")
 
 # COMMAND ----------
-# MAGIC %md ## 2. Conform + hash + filter
+# MAGIC %md ## 2. Conform + hash + validate
 
 DATETIME_FMTS = [
     "%Y-%m-%dT%H:%M:%S.%fZ",
@@ -119,7 +119,7 @@ DATETIME_FMTS = [
 ]
 
 
-def parse_dt(s: str):
+def parse_dt(s: str) -> datetime | None:
     for fmt in DATETIME_FMTS:
         try:
             return datetime.strptime(s.strip(), fmt).replace(tzinfo=timezone.utc)
@@ -128,53 +128,66 @@ def parse_dt(s: str):
     return None
 
 
-def row_hash(username, query_text, response_text, chat_step, conversation_id,
-             source_tool, event_datetime) -> str:
-    """SHA-256 of normalized canonical fields."""
+def make_row_hash(
+    username: str, query_text: str, response_text: str,
+    chat_step: int, conversation_id: str, source_tool: str,
+    event_datetime_iso: str,
+) -> str:
+    """SHA-256 of US-unit-separator-delimited canonical fields."""
     canonical = "\x1f".join([
-        str(username or "").strip().lower(),
-        str(query_text or "").strip(),
-        str(response_text or "").strip(),
-        str(chat_step or "").strip(),
+        str(username        or "").strip().lower(),
+        str(query_text      or "").strip(),
+        str(response_text   or "").strip(),
+        str(chat_step       or ""),
         str(conversation_id or "").strip(),
-        str(source_tool or "").strip(),
-        str(event_datetime or ""),
+        str(source_tool     or "").strip(),
+        event_datetime_iso,
     ])
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
-conformed = []
-skipped = 0
 ingested_at = datetime.now(timezone.utc)
+conformed: list[dict] = []
+skipped_non_user = 0
 
-for rec in records:
+for i, rec in enumerate(records):
     username = (rec.get("Username") or "").strip()
-
-    # Filter to target user only
     if username != USERNAME_FILTER:
-        skipped += 1
+        skipped_non_user += 1
         continue
 
-    query_text    = rec.get("Query", "") or ""
-    response_text = rec.get("Response", "") or ""
-    chat_step_raw = rec.get("Chat_step", "0") or "0"
+    query_text      = rec.get("Query",          "") or ""
+    response_text   = rec.get("Response",       "") or ""
+    chat_step_raw   = rec.get("Chat_step",      "0") or "0"
     conversation_id = (rec.get("Conversation_id") or "").strip()
-    source_tool   = (rec.get("Tool") or "").strip()
-    dt_str        = (rec.get("Datetime") or "").strip()
+    source_tool     = (rec.get("Tool",          "") or "").strip()
+    dt_str          = (rec.get("Datetime",      "") or "").strip()
+
+    # Hard assertion: datetime must be parseable
+    assert dt_str, (
+        f"Row {i}: empty Datetime field for conversation_id={conversation_id!r}"
+    )
+    event_dt = parse_dt(dt_str)
+    assert event_dt is not None, (
+        f"Row {i}: unparseable Datetime {dt_str!r} for conversation_id={conversation_id!r}"
+    )
+
+    # Hard assertion: conversation_id must be non-empty
+    assert conversation_id, f"Row {i}: empty Conversation_id (Datetime={dt_str!r})"
 
     try:
         chat_step_int = int(float(chat_step_raw))
     except (ValueError, TypeError):
-        chat_step_int = 0
+        raise AssertionError(
+            f"Row {i}: unparseable Chat_step {chat_step_raw!r} "
+            f"for conversation_id={conversation_id!r}"
+        )
 
-    event_dt = parse_dt(dt_str)
-    if event_dt is None:
-        print(f"  WARNING: unparseable datetime {dt_str!r} for conv {conversation_id}")
-        continue
-
-    h = row_hash(username, query_text, response_text,
-                 chat_step_int, conversation_id, source_tool, event_dt.isoformat())
-
+    h = make_row_hash(
+        username, query_text, response_text,
+        chat_step_int, conversation_id, source_tool,
+        event_dt.isoformat(),
+    )
     conformed.append({
         "username":         username,
         "query_text":       query_text,
@@ -188,16 +201,46 @@ for rec in records:
         "row_hash":         h,
     })
 
-print(f"Conformed rows:  {len(conformed)}")
-print(f"Skipped (non-{USERNAME_FILTER}): {skipped}")
-assert all(r["username"] == USERNAME_FILTER for r in conformed), "Filter breach!"
+print(f"Conformed rows           : {len(conformed)}")
+print(f"Skipped (non-{USERNAME_FILTER}): {skipped_non_user}")
+
+# Hard assertions on conformed data
+assert COUNT_LO <= len(conformed) <= COUNT_HI, (
+    f"Row count {len(conformed)} outside expected range [{COUNT_LO}, {COUNT_HI}]. "
+    "Source sheet may have been modified — review before adjusting bounds."
+)
+assert all(r["username"] == USERNAME_FILTER for r in conformed), (
+    "Filter breach: non-target username present after filter"
+)
+assert all(r["conversation_id"] for r in conformed), (
+    "Empty conversation_id after filter"
+)
 
 # COMMAND ----------
-# MAGIC %md ## 3. Create Spark DataFrame + idempotent MERGE
+# MAGIC %md ## 3. Pre-MERGE deduplication on row_hash
 
-from pyspark.sql.types import (
-    StructType, StructField, StringType, LongType, TimestampType
-)
+# Deduplicate source rows on row_hash before MERGE.
+# Without this, duplicate source rows with the same hash would both be
+# inserted (MERGE matches against the target, not within the source).
+seen: dict[str, bool] = {}
+deduped: list[dict] = []
+for r in conformed:
+    if r["row_hash"] not in seen:
+        seen[r["row_hash"]] = True
+        deduped.append(r)
+
+n_dupes = len(conformed) - len(deduped)
+if n_dupes:
+    print(f"WARNING: {n_dupes} duplicate row_hashes removed from source before MERGE")
+conformed = deduped
+
+# Assert uniqueness after dedup (should always hold)
+hashes = [r["row_hash"] for r in conformed]
+assert len(set(hashes)) == len(hashes), "Logic error: duplicates remain after dedup"
+print(f"Post-dedup source rows   : {len(conformed)} (unique hashes)")
+
+# COMMAND ----------
+# MAGIC %md ## 4. Build Spark DataFrame + MERGE
 
 SCHEMA_DEF = StructType([
     StructField("username",        StringType(),    False),
@@ -218,15 +261,12 @@ df_new = spark.createDataFrame(
         r["chat_step"], r["conversation_id"], r["source_tool"],
         r["event_datetime"], r["ingested_at"], r["source_name"], r["row_hash"]
     ) for r in conformed],
-    schema=SCHEMA_DEF
+    schema=SCHEMA_DEF,
 )
 df_new.createOrReplaceTempView("new_rows")
+print(f"Source DataFrame rows    : {df_new.count()}")
 
-print(f"DataFrame rows: {df_new.count()}")
-
-# COMMAND ----------
-
-# Idempotent MERGE — insert only rows whose row_hash is not already present
+# Idempotent MERGE — insert only rows whose row_hash is not already in target
 spark.sql(f"""
 MERGE INTO {TABLE} AS tgt
 USING new_rows AS src
@@ -236,7 +276,7 @@ WHEN NOT MATCHED THEN INSERT *
 print("MERGE complete")
 
 # COMMAND ----------
-# MAGIC %md ## 4. Verify
+# MAGIC %md ## 5. Post-MERGE verification
 
 count_total = spark.sql(f"SELECT COUNT(*) AS n FROM {TABLE}").first().n
 count_user  = spark.sql(
@@ -246,35 +286,55 @@ count_other = spark.sql(
     f"SELECT COUNT(*) AS n FROM {TABLE} WHERE username != '{USERNAME_FILTER}'"
 ).first().n
 
-print(f"Total rows in {TABLE}: {count_total}")
-print(f"  username='{USERNAME_FILTER}': {count_user}")
-print(f"  other usernames:             {count_other}")
-assert count_other == 0, f"Contamination: {count_other} non-{USERNAME_FILTER} rows!"
+print(f"Rows in {TABLE}:")
+print(f"  total                  : {count_total}")
+print(f"  username='{USERNAME_FILTER}' : {count_user}")
+print(f"  other                  : {count_other}")
+
+assert count_other == 0, (
+    f"Contamination: {count_other} rows with username != '{USERNAME_FILTER}'"
+)
+
+# Assert post-MERGE row_hash uniqueness (MERGE must not produce duplicates)
+n_hash_dupes = spark.sql(f"""
+    SELECT COUNT(*) AS n FROM (
+        SELECT row_hash FROM {TABLE}
+        GROUP BY row_hash HAVING COUNT(*) > 1
+    )
+""").first().n
+assert n_hash_dupes == 0, (
+    f"Post-MERGE: {n_hash_dupes} duplicate row_hashes in {TABLE}"
+)
+print("row_hash uniqueness      : PASS")
 
 # COMMAND ----------
+# MAGIC %md ## 6. Sample row
 
-# Sample row for human review
-print("\n=== SAMPLE ROW ===")
 sample = spark.sql(f"""
 SELECT username, conversation_id, chat_step, source_tool,
        event_datetime, source_name,
-       LEFT(query_text, 200) AS query_preview,
+       LEFT(query_text, 200)    AS query_preview,
        LEFT(response_text, 200) AS response_preview,
        row_hash
 FROM {TABLE}
 ORDER BY event_datetime ASC
 LIMIT 1
 """).first()
-for field in sample.__fields__:
-    print(f"  {field:20s}: {getattr(sample, field)}")
+
+if sample is not None:
+    print("\n=== SAMPLE ROW (earliest by event_datetime) ===")
+    for field in sample.__fields__:
+        print(f"  {field:20s}: {getattr(sample, field)}")
+else:
+    print("WARNING: table is empty — no sample to display")
 
 # COMMAND ----------
-# MAGIC %md ## 5. Date distribution
+# MAGIC %md ## 7. Date distribution
 
 spark.sql(f"""
 SELECT DATE_TRUNC('month', event_datetime) AS month,
-       COUNT(*) AS rows,
-       COUNT(DISTINCT conversation_id) AS conversations
+       COUNT(*)                            AS rows,
+       COUNT(DISTINCT conversation_id)     AS conversations
 FROM {TABLE}
 GROUP BY 1
 ORDER BY 1

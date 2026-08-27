@@ -2,248 +2,124 @@
 # MAGIC %md
 # MAGIC # 01 — Sessionize raw_conversations_abdullah_said
 # MAGIC
-# MAGIC Groups events by conversation_id, orders by event_datetime then chat_step,
-# MAGIC and produces ONE session record per conversation_id.
-# MAGIC Preserves /goal text, commands, paths, branches, worktrees, test names,
-# MAGIC failures, and corrections per SPEC §4.
+# MAGIC Pure sessionization: groups events by conversation_id, orders them
+# MAGIC deterministically by (event_datetime ASC, chat_step ASC, row_hash ASC),
+# MAGIC and produces EXACTLY ONE session record per conversation_id.
 # MAGIC
-# MAGIC Output: UC view `sessions_abdullah_said` (or a temp view used downstream).
+# MAGIC Output columns:
+# MAGIC   conversation_id  STRING
+# MAGIC   username         STRING   — from first (earliest) event
+# MAGIC   source_tool      STRING   — from first (earliest) event
+# MAGIC   started_at       TIMESTAMP
+# MAGIC   ended_at         TIMESTAMP
+# MAGIC   event_count      BIGINT
+# MAGIC   events           ARRAY<STRUCT<...>>  — complete, ordered; no truncation
+# MAGIC
+# MAGIC No extraction, no signal parsing, no UDFs. Extraction belongs in notebook 02.
 
 # COMMAND ----------
 
-CATALOG  = "ai_fde_hackathon_catalog"
-SCHEMA   = "automatic_user_context_profiles"
-RAW_TBL  = f"{CATALOG}.{SCHEMA}.raw_conversations_abdullah_said"
+from pyspark.sql import functions as F
 
-# COMMAND ----------
+CATALOG = "ai_fde_hackathon_catalog"
+SCHEMA  = "automatic_user_context_profiles"
+RAW_TBL = f"{CATALOG}.{SCHEMA}.raw_conversations_abdullah_said"
 
-from pyspark.sql import functions as F, Window
-
-# Load raw
 df_raw = spark.table(RAW_TBL)
-print(f"Raw rows: {df_raw.count()}")
+raw_count = df_raw.count()
+print(f"Raw rows loaded: {raw_count}")
 
 # COMMAND ----------
-# MAGIC %md ## Sessionize: one row per conversation_id
+# MAGIC %md ## Sessionize — one row per conversation_id
 
-# Order events within each conversation consistently
-w = Window.partitionBy("conversation_id").orderBy("event_datetime", "chat_step")
-
-df_ordered = (
-    df_raw
-    .withColumn("_step_rank", F.rank().over(w))
-    .orderBy("conversation_id", "event_datetime", "chat_step")
-)
-
-# Aggregate per conversation_id — preserve all key signals
+# Build a struct with sort keys first so sort_array is deterministic:
+#   primary   : event_datetime  (ascending)
+#   secondary : chat_step       (ascending)
+#   tie-break : row_hash        (ascending — SHA-256 is unique, always breaks ties)
+# All remaining fields follow; they are carried along, not sorted on.
 df_sessions = (
-    df_ordered.groupBy("conversation_id")
+    df_raw
+    .groupBy("conversation_id")
     .agg(
-        F.first("username").alias("username"),
-        F.first("source_tool").alias("source_tool"),
+        F.sort_array(
+            F.collect_list(
+                F.struct(
+                    F.col("event_datetime"),   # sort key 1
+                    F.col("chat_step"),        # sort key 2
+                    F.col("row_hash"),         # sort key 3 / tie-breaker
+                    F.col("username"),
+                    F.col("query_text"),       # complete — not truncated
+                    F.col("response_text"),    # complete — not truncated
+                    F.col("source_tool"),
+                    F.col("source_name"),
+                    F.col("ingested_at"),
+                )
+            )
+        ).alias("events"),
+        F.count("*").alias("event_count"),
         F.min("event_datetime").alias("started_at"),
         F.max("event_datetime").alias("ended_at"),
-        F.count("*").alias("event_count"),
-        # Ordered transcript: concat steps in ranked order
-        F.collect_list(
-            F.struct(
-                F.col("_step_rank").alias("rank"),
-                F.col("chat_step").alias("chat_step"),
-                F.col("event_datetime").alias("event_datetime"),
-                F.col("query_text").alias("query_text"),
-                F.col("response_text").alias("response_text"),
-            )
-        ).alias("events_unordered"),
-        # Extract /goal line from first query containing /goal
-        F.first(
-            F.when(
-                F.lower(F.col("query_text")).like("%/goal%"),
-                F.col("query_text")
-            )
-        ).alias("goal_raw"),
     )
+    # Derive username and source_tool from the first sorted event (deterministic).
+    .withColumn("username",    F.col("events").getItem(0).getField("username"))
+    .withColumn("source_tool", F.col("events").getItem(0).getField("source_tool"))
 )
 
-# Re-sort events within each session by rank
-# (collect_list ordering is non-deterministic; we'll sort in Python below)
-# For display/downstream we add a sorted_transcript as JSON string
+session_count = df_sessions.count()
+print(f"Sessions produced: {session_count}")
 
-from pyspark.sql.types import ArrayType, StructType, StructField, StringType, LongType, TimestampType
-import json
+# COMMAND ----------
+# MAGIC %md ## Verify: exactly one row per conversation_id
 
-def extract_goal_line(goal_raw: str) -> str:
-    """Return the /goal line (first line containing /goal, up to 500 chars)."""
-    if not goal_raw:
-        return None
-    for line in goal_raw.split("\n"):
-        if "/goal" in line.lower():
-            return line.strip()[:500]
-    return goal_raw[:500]
+distinct_conv_ids = df_raw.select("conversation_id").distinct().count()
+assert session_count == distinct_conv_ids, (
+    f"Session count {session_count} != distinct conversation_id count "
+    f"{distinct_conv_ids} — possible merge or split"
+)
+print(f"PASS: one session per conversation_id ({session_count})")
 
-def sort_events(events):
-    """Sort event structs by (rank, chat_step)."""
-    if not events:
-        return []
-    return sorted(events, key=lambda e: (e.rank, e.chat_step))
+# COMMAND ----------
+# MAGIC %md ## Publish as temp view for downstream notebooks
 
-def extract_paths(text: str) -> list[str]:
-    """Extract filesystem paths from text."""
-    import re
-    if not text:
-        return []
-    return list(set(re.findall(r'/[\w./\-_]+(?:\.py|\.md|\.json|\.yaml|\.toml|\.txt|\.sh)?', text)))
+df_sessions.createOrReplaceTempView("sessions_abdullah_said")
 
-def extract_branches(text: str) -> list[str]:
-    """Extract branch patterns (polly/*, dev/*, feat/*, fix/*)."""
-    import re
-    if not text:
-        return []
-    return list(set(re.findall(r'\b(?:polly|dev|feat|fix|chore|docs)/[\w.\-]+', text)))
+# COMMAND ----------
+# MAGIC %md ## Sample session record (complete ordered events)
 
-def extract_worktrees(text: str) -> list[str]:
-    """Extract worktree paths."""
-    import re
-    if not text:
-        return []
-    return list(set(re.findall(r'\.worktrees/[\w.\-]+', text)))
-
-def extract_test_names(text: str) -> list[str]:
-    """Extract pytest test function/class names."""
-    import re
-    if not text:
-        return []
-    return list(set(re.findall(r'\btest_[\w]+|\bTest[\w]+', text)))
-
-def extract_commands(text: str) -> list[str]:
-    """Extract shell commands (pytest, ruff, git, databricks, pip, etc.)."""
-    import re
-    if not text:
-        return []
-    patterns = [
-        r'pytest[\s\w./\-]+',
-        r'ruff\s+check[\s\w./\-]+',
-        r'git\s+\w+[\s\w./\-]*',
-        r'databricks[\s\w./\-]+',
-    ]
-    found = []
-    for pat in patterns:
-        found.extend(re.findall(pat, text))
-    return list(set(f[:200] for f in found))
-
-
-@F.udf(returnType=StringType())
-def build_session_json(events_unordered, goal_raw: str) -> str:
-    """Produce a compact JSON session record with sorted events and extracted signals."""
-    events = sort_events(events_unordered) if events_unordered else []
-
-    goal_line = extract_goal_line(goal_raw)
-
-    all_queries    = " ".join(e.query_text or "" for e in events)
-    all_responses  = " ".join(e.response_text or "" for e in events)
-    all_text       = all_queries + " " + all_responses
-
-    paths      = extract_paths(all_text)
-    branches   = extract_branches(all_text)
-    worktrees  = extract_worktrees(all_text)
-    test_names = extract_test_names(all_text)
-    commands   = extract_commands(all_text)
-
-    steps = [
-        {
-            "rank":          e.rank,
-            "chat_step":     e.chat_step,
-            "event_datetime": str(e.event_datetime),
-            "query_preview":  (e.query_text or "")[:300],
-            "response_preview": (e.response_text or "")[:300],
-        }
-        for e in events
-    ]
-
-    record = {
-        "goal":       goal_line,
-        "steps":      steps,
-        "paths":      sorted(set(paths))[:30],
-        "branches":   sorted(set(branches))[:10],
-        "worktrees":  sorted(set(worktrees))[:10],
-        "test_names": sorted(set(test_names))[:20],
-        "commands":   sorted(set(commands))[:15],
-    }
-    return json.dumps(record, default=str)
-
-
-df_sessions_enriched = (
-    df_sessions
-    .withColumn("session_json", build_session_json("events_unordered", "goal_raw"))
-    .withColumn(
-        "goal_line",
-        F.udf(extract_goal_line, StringType())("goal_raw")
-    )
-    .drop("events_unordered")
-    .orderBy("started_at")
+sample = (
+    spark.sql("""
+        SELECT conversation_id, username, source_tool,
+               started_at, ended_at, event_count, events
+        FROM sessions_abdullah_said
+        ORDER BY event_count DESC, conversation_id ASC
+        LIMIT 1
+    """)
+    .first()
 )
 
-df_sessions_enriched.createOrReplaceTempView("sessions_abdullah_said")
-
-print(f"Sessions: {df_sessions_enriched.count()}")
-
-# COMMAND ----------
-# MAGIC %md ## Verify: no cross-conversation merges
-
-assert df_sessions_enriched.count() == df_raw.select("conversation_id").distinct().count(), \
-    "Mismatch: session count != distinct conversation_id count — possible merge!"
-print("PASS: one session per conversation_id")
-
-# COMMAND ----------
-# MAGIC %md ## Sample session record
-
-sample = spark.sql("""
-SELECT conversation_id, username, source_tool,
-       started_at, ended_at, event_count, goal_line, session_json
-FROM sessions_abdullah_said
-WHERE goal_line IS NOT NULL
-ORDER BY started_at ASC
-LIMIT 1
-""").first()
-
-if sample:
-    import json
-    print(f"\n=== SAMPLE SESSION RECORD ===")
-    print(f"conversation_id : {sample.conversation_id}")
-    print(f"source_tool     : {sample.source_tool}")
-    print(f"started_at      : {sample.started_at}")
-    print(f"ended_at        : {sample.ended_at}")
-    print(f"event_count     : {sample.event_count}")
-    print(f"goal_line       : {sample.goal_line}")
-    sj = json.loads(sample.session_json)
-    print(f"\nPaths detected  : {sj.get('paths', [])[:5]}")
-    print(f"Branches        : {sj.get('branches', [])}")
-    print(f"Worktrees       : {sj.get('worktrees', [])}")
-    print(f"Test names (5)  : {sj.get('test_names', [])[:5]}")
-    print(f"Commands  (5)   : {sj.get('commands', [])[:5]}")
-    print(f"\nOrdered steps   :")
-    for step in sj.get("steps", []):
-        print(f"  rank={step['rank']} step={step['chat_step']} dt={step['event_datetime']}")
-        print(f"    query: {step['query_preview'][:120]}")
-
-# COMMAND ----------
-# MAGIC %md ## /goal sessions overview
-
-spark.sql("""
-SELECT conversation_id, started_at, event_count,
-       LEFT(goal_line, 200) AS goal_preview
-FROM sessions_abdullah_said
-WHERE goal_line IS NOT NULL
-ORDER BY started_at
-""").show(20, truncate=False)
+if sample is not None:
+    print(f"\n=== SAMPLE SESSION (most events) ===")
+    print(f"  conversation_id : {sample.conversation_id}")
+    print(f"  username        : {sample.username}")
+    print(f"  source_tool     : {sample.source_tool}")
+    print(f"  started_at      : {sample.started_at}")
+    print(f"  ended_at        : {sample.ended_at}")
+    print(f"  event_count     : {sample.event_count}")
+    print(f"\n  Ordered events ({len(sample.events)} total):")
+    for ev in sample.events:
+        print(f"    event_datetime={ev.event_datetime}  chat_step={ev.chat_step}")
+        print(f"      query    : {(ev.query_text or '')[:120]!r}")
+        print(f"      response : {(ev.response_text or '')[:120]!r}")
+else:
+    print("WARNING: no sessions — table may be empty")
 
 # COMMAND ----------
 # MAGIC %md ## Timeline overview
 
 spark.sql("""
 SELECT DATE_TRUNC('month', started_at) AS month,
-       COUNT(*) AS sessions,
-       SUM(event_count) AS events,
-       COUNT(CASE WHEN goal_line IS NOT NULL THEN 1 END) AS goal_sessions
+       COUNT(*)            AS sessions,
+       SUM(event_count)    AS events
 FROM sessions_abdullah_said
 GROUP BY 1
 ORDER BY 1

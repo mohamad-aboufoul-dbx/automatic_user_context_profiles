@@ -1,45 +1,60 @@
 #!/usr/bin/env bash
-# run_day1.sh — Execute Day-1 notebooks on fe-ai-sage once authenticated.
-# Usage: bash scripts/run_day1.sh [fe-ai-sage]
+# run_day1.sh — Execute Day-1 notebooks on the target Databricks workspace.
+# Usage: bash scripts/run_day1.sh [profile]
+# Default profile: fe-ai-sage
+#
+# Runs in order: _setup_uc_objects → 00_ingest_abdullah_tab → 01_sessionize
+# Each notebook runs on its own cluster job and must succeed before the next starts.
+# Any non-SUCCESS result exits 1 immediately.
+# Safe to re-run (MERGE is idempotent, CREATE TABLE IF NOT EXISTS is idempotent).
 set -euo pipefail
 
 PROFILE="${1:-fe-ai-sage}"
 WORKSPACE_PATH="/Users/abdullah.said@databricks.com/hackathon_auto_profiles"
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-CSV_DBFS="/dbfs/tmp/raw_abdullah_tab.csv"
+POLL_INTERVAL=20   # seconds between lifecycle state polls
+MAX_WAIT=1800      # abort if a run has not completed in 30 minutes
+SPARK_VERSION="15.4.x-scala2.12"
+NODE_TYPE="i3.xlarge"
+NUM_WORKERS=1      # standard single-worker cluster (no conflicting singleNode profile)
 
-echo "=== Day-1 Databricks Execution ==="
-echo "Profile  : $PROFILE"
-echo "Workspace: $WORKSPACE_PATH"
-echo ""
+# ---------------------------------------------------------------------------
+# helpers
+# ---------------------------------------------------------------------------
 
+die() { echo "ERROR: $*" >&2; exit 1; }
+
+require_cmd() { command -v "$1" >/dev/null 2>&1 || die "Required command not found: $1"; }
+
+require_cmd databricks
+require_cmd python3
+
+# ---------------------------------------------------------------------------
 # 0. Verify auth
-echo "[0] Verifying auth..."
-databricks current-user me --profile "$PROFILE" | python3 -c "
-import json,sys
-d=json.load(sys.stdin)
-print('  Authenticated as:', d.get('userName'))
-"
+# ---------------------------------------------------------------------------
+echo "=== Day-1 Databricks Execution ==="
+echo "Profile : $PROFILE"
+echo ""
+echo "[0] Verifying authentication..."
+ME=$(databricks current-user me --profile "$PROFILE" \
+     | python3 -c "import json,sys; print(json.load(sys.stdin)['userName'])" 2>&1) \
+  || die "Auth check failed. Run: databricks auth login --host https://fe-ai-sage.cloud.databricks.com --profile $PROFILE"
+echo "    Authenticated as: $ME"
 
-# 1. Pick a warehouse
-echo "[1] Finding warehouse..."
-WH_ID=$(databricks warehouses list --profile "$PROFILE" --output json | python3 -c "
-import json,sys
-ws=json.load(sys.stdin)
-running=[w for w in ws if w.get('state')=='RUNNING']
-all_ws=running or ws
-print(sorted(all_ws, key=lambda w: w.get('num_active_sessions',0), reverse=True)[0]['id'])
-")
-echo "  Warehouse: $WH_ID"
-
-# 2. Upload CSV to DBFS (fallback input for notebook 00)
-echo "[2] Uploading CSV to DBFS..."
-databricks fs cp "$REPO_ROOT/data/raw_abdullah_tab.csv" "dbfs:/tmp/raw_abdullah_tab.csv" \
+# ---------------------------------------------------------------------------
+# 1. Upload CSV fallback to DBFS
+# ---------------------------------------------------------------------------
+echo "[1] Uploading CSV fallback to DBFS..."
+CSV_SRC="$REPO_ROOT/data/raw_abdullah_tab.csv"
+[ -f "$CSV_SRC" ] || die "CSV not found: $CSV_SRC"
+databricks fs cp "$CSV_SRC" "dbfs:/tmp/raw_abdullah_tab.csv" \
   --profile "$PROFILE" --overwrite
-echo "  CSV uploaded to dbfs:/tmp/raw_abdullah_tab.csv"
+echo "    Uploaded: dbfs:/tmp/raw_abdullah_tab.csv"
 
-# 3. Import notebooks to workspace
-echo "[3] Importing notebooks..."
+# ---------------------------------------------------------------------------
+# 2. Import notebooks to workspace
+# ---------------------------------------------------------------------------
+echo "[2] Importing notebooks to workspace..."
 for nb in _setup_uc_objects 00_ingest_abdullah_tab 01_sessionize; do
     databricks workspace import "$WORKSPACE_PATH/$nb" \
       --file "$REPO_ROOT/notebooks/${nb}.py" \
@@ -47,68 +62,115 @@ for nb in _setup_uc_objects 00_ingest_abdullah_tab 01_sessionize; do
       --format SOURCE \
       --overwrite \
       --profile "$PROFILE"
-    echo "  Imported: $nb"
+    echo "    Imported: $WORKSPACE_PATH/$nb"
 done
 
-# 4. Run notebooks in order via one-time jobs
-run_notebook() {
+# ---------------------------------------------------------------------------
+# helpers: submit and wait
+# ---------------------------------------------------------------------------
+
+# submit_notebook_run <notebook_path> <run_name> <profile>
+# Echoes the run_id to stdout.
+submit_notebook_run() {
     local NB_PATH="$1"
-    local JOB_NAME="$2"
-    local CLUSTER_KEY="$3"
+    local RUN_NAME="$2"
+    local PROFILE="$3"
 
-    echo "[run] $NB_PATH"
-
-    # Create one-time run
-    RUN_ID=$(databricks runs submit \
-      --json "{
-        \"run_name\": \"$JOB_NAME\",
-        \"new_cluster\": {
-          \"spark_version\": \"15.4.x-scala2.12\",
-          \"node_type_id\": \"i3.xlarge\",
-          \"num_workers\": 1,
-          \"spark_conf\": {\"spark.databricks.cluster.profile\": \"singleNode\"},
-          \"single_user_name\": \"$(databricks current-user me --profile $PROFILE | python3 -c 'import json,sys; print(json.load(sys.stdin)[\"userName\"])')\"
-        },
-        \"notebook_task\": {\"notebook_path\": \"$NB_PATH\"}
-      }" \
-      --profile "$PROFILE" | python3 -c "import json,sys; print(json.load(sys.stdin)['run_id'])")
-
-    echo "  run_id=$RUN_ID — waiting..."
-    databricks runs wait --run-id "$RUN_ID" --profile "$PROFILE"
-
-    STATE=$(databricks runs get --run-id "$RUN_ID" --profile "$PROFILE" | \
-      python3 -c "import json,sys; d=json.load(sys.stdin); print(d['state']['result_state'])")
-    echo "  State: $STATE"
-    if [ "$STATE" != "SUCCESS" ]; then
-        echo "  FAILED — check run: databricks runs get --run-id $RUN_ID --profile $PROFILE"
-        exit 1
-    fi
+    local PAYLOAD
+    PAYLOAD=$(python3 - <<PY
+import json
+payload = {
+    "run_name": "$RUN_NAME",
+    "new_cluster": {
+        "spark_version": "$SPARK_VERSION",
+        "node_type_id":  "$NODE_TYPE",
+        "num_workers":    $NUM_WORKERS,
+    },
+    "notebook_task": {
+        "notebook_path": "$NB_PATH",
+        "source":        "WORKSPACE",
+    },
+}
+print(json.dumps(payload))
+PY
+)
+    databricks runs submit --json "$PAYLOAD" --profile "$PROFILE" \
+      | python3 -c "import json,sys; print(json.load(sys.stdin)['run_id'])"
 }
 
-# Use SQL warehouse for setup + ingest to avoid cluster spin-up
-echo ""
-echo "[4] Executing notebooks..."
+# wait_for_run <run_id> <profile>
+# Polls until the run reaches a terminal lifecycle state.
+# Exits 1 if result_state is not SUCCESS.
+wait_for_run() {
+    local RUN_ID="$1"
+    local PROFILE="$2"
+    local elapsed=0
 
-# _setup_uc_objects via SQL statements
-echo "  Creating UC objects via SQL..."
-for SQL in \
-    "CREATE SCHEMA IF NOT EXISTS ai_fde_hackathon_catalog.automatic_user_context_profiles" \
-    "CREATE TABLE IF NOT EXISTS ai_fde_hackathon_catalog.automatic_user_context_profiles.raw_conversations_abdullah_said (username STRING NOT NULL, query_text STRING, response_text STRING, chat_step BIGINT NOT NULL, conversation_id STRING NOT NULL, source_tool STRING NOT NULL, event_datetime TIMESTAMP NOT NULL, ingested_at TIMESTAMP NOT NULL, source_name STRING NOT NULL, row_hash STRING NOT NULL) USING DELTA TBLPROPERTIES ('delta.enableChangeDataFeed'='true')" \
-    "CREATE TABLE IF NOT EXISTS ai_fde_hackathon_catalog.automatic_user_context_profiles.atomic_memories (memory_id STRING NOT NULL, username STRING NOT NULL, memory_text STRING NOT NULL, memory_type STRING NOT NULL, domain STRING NOT NULL, source_tool STRING NOT NULL, conversation_id STRING NOT NULL, source_datetime TIMESTAMP NOT NULL, evidence STRING NOT NULL, confidence DOUBLE NOT NULL, embedding ARRAY<FLOAT>, embedding_model STRING, extraction_model STRING NOT NULL, extraction_run_id STRING NOT NULL, created_at TIMESTAMP NOT NULL) USING DELTA TBLPROPERTIES ('delta.enableChangeDataFeed'='true')" \
-    "CREATE TABLE IF NOT EXISTS ai_fde_hackathon_catalog.automatic_user_context_profiles.eval_tasks (task_id STRING NOT NULL, goal_prompt STRING NOT NULL, repository STRING NOT NULL, starting_commit STRING NOT NULL, temporal_cutoff TIMESTAMP NOT NULL, heldout_conversation_ids ARRAY<STRING> NOT NULL, allowed_domains ARRAY<STRING> NOT NULL, acceptance_command STRING NOT NULL, regression_command STRING, required_files ARRAY<STRING>, forbidden_files ARRAY<STRING>, max_minutes INT NOT NULL, max_tool_calls INT NOT NULL, task_definition_hash STRING NOT NULL, created_at TIMESTAMP NOT NULL) USING DELTA" \
-    "CREATE TABLE IF NOT EXISTS ai_fde_hackathon_catalog.automatic_user_context_profiles.memory_artifacts (artifact_id STRING NOT NULL, task_id STRING NOT NULL, arm STRING NOT NULL, compiler_version STRING NOT NULL, config_json STRING NOT NULL, selected_memory_ids ARRAY<STRING> NOT NULL, payload_sha256 STRING NOT NULL, file_sha256 STRING NOT NULL, sentinel STRING NOT NULL, memory_markdown STRING NOT NULL, token_count INT NOT NULL, volume_path STRING NOT NULL, frozen_at TIMESTAMP NOT NULL) USING DELTA" \
-    "CREATE TABLE IF NOT EXISTS ai_fde_hackathon_catalog.automatic_user_context_profiles.eval_runs (run_id STRING NOT NULL, task_id STRING NOT NULL, arm STRING NOT NULL, repeat_number INT NOT NULL, artifact_id STRING NOT NULL, file_sha256 STRING NOT NULL, sentinel_expected STRING NOT NULL, sentinel_observed STRING, injection_verified BOOLEAN NOT NULL, agent_name STRING NOT NULL, model_name STRING NOT NULL, starting_commit STRING NOT NULL, final_commit STRING, success BOOLEAN NOT NULL, acceptance_tests_passed BOOLEAN NOT NULL, regression_tests_passed BOOLEAN, forbidden_files_unchanged BOOLEAN NOT NULL, elapsed_seconds DOUBLE, total_tool_calls INT, exploratory_reads_before_edit INT, failed_test_cycles INT, input_tokens BIGINT, output_tokens BIGINT, trace_path STRING, final_diff_path STRING, failure_reason STRING, started_at TIMESTAMP NOT NULL, completed_at TIMESTAMP) USING DELTA" \
+    while [ $elapsed -lt $MAX_WAIT ]; do
+        local LC_STATE
+        LC_STATE=$(databricks runs get --run-id "$RUN_ID" --profile "$PROFILE" \
+            | python3 -c "
+import json,sys
+d=json.load(sys.stdin)
+print(d['state']['life_cycle_state'])
+")
+        case "$LC_STATE" in
+            TERMINATED|INTERNAL_ERROR|SKIPPED)
+                break ;;
+            *)
+                printf "    ... %s (%ds elapsed)\r" "$LC_STATE" "$elapsed"
+                sleep $POLL_INTERVAL
+                elapsed=$((elapsed + POLL_INTERVAL))
+                ;;
+        esac
+    done
+    echo ""  # clear the carriage-return line
+
+    if [ $elapsed -ge $MAX_WAIT ]; then
+        die "Timed out waiting for run_id=$RUN_ID after ${MAX_WAIT}s"
+    fi
+
+    local RESULT_STATE
+    RESULT_STATE=$(databricks runs get --run-id "$RUN_ID" --profile "$PROFILE" \
+        | python3 -c "
+import json,sys
+d=json.load(sys.stdin)
+print(d['state'].get('result_state','UNKNOWN'))
+")
+    if [ "$RESULT_STATE" != "SUCCESS" ]; then
+        echo "    RESULT: $RESULT_STATE"
+        echo "    Inspect run: databricks runs get --run-id $RUN_ID --profile $PROFILE"
+        die "Notebook run failed (run_id=$RUN_ID result=$RESULT_STATE)"
+    fi
+    echo "    RESULT: $RESULT_STATE"
+}
+
+# ---------------------------------------------------------------------------
+# 3. Run notebooks in order
+# ---------------------------------------------------------------------------
+echo "[3] Running notebooks in order..."
+echo ""
+
+for ENTRY in \
+    "_setup_uc_objects:day1-setup" \
+    "00_ingest_abdullah_tab:day1-ingest" \
+    "01_sessionize:day1-sessionize" \
 ; do
-    OUT=$(databricks api post /api/2.0/sql/statements/ \
-      --json "{\"statement\": $(python3 -c "import json,sys; print(json.dumps('$SQL'))"), \"warehouse_id\": \"$WH_ID\", \"format\":\"JSON_ARRAY\", \"wait_timeout\":\"60s\"}" \
-      --profile "$PROFILE" 2>&1)
-    STATE=$(echo "$OUT" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('status',{}).get('state','?'))" 2>/dev/null || echo "PARSE_ERROR")
-    echo "    $STATE — ${SQL:0:80}..."
+    NB_SHORT="${ENTRY%%:*}"
+    RUN_NAME="${ENTRY##*:}"
+    NB_FULL="$WORKSPACE_PATH/$NB_SHORT"
+
+    echo "  [run] $NB_FULL"
+    RUN_ID=$(submit_notebook_run "$NB_FULL" "$RUN_NAME" "$PROFILE")
+    echo "    run_id=$RUN_ID — waiting for completion..."
+    wait_for_run "$RUN_ID" "$PROFILE"
 done
 
+# ---------------------------------------------------------------------------
+# Done
+# ---------------------------------------------------------------------------
 echo ""
-echo "=== Day-1 setup complete. Run notebooks 00 + 01 via Databricks UI or workspace runs. ==="
-echo "Notebook paths:"
-echo "  $WORKSPACE_PATH/_setup_uc_objects"
-echo "  $WORKSPACE_PATH/00_ingest_abdullah_tab"
-echo "  $WORKSPACE_PATH/01_sessionize"
+echo "=== All Day-1 notebooks completed successfully ==="
+echo "    _setup_uc_objects   : UC schema + all 5 tables created and verified"
+echo "    00_ingest_abdullah_tab : data loaded into raw_conversations_abdullah_said"
+echo "    01_sessionize          : sessions view populated"
