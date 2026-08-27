@@ -1,0 +1,16 @@
+{
+  "embedding_model": "TODO-fixed-endpoint-id",
+  "cutoff_ts": "TODO-ISO8601-after-heldout-signoff",
+  "heldout_conversation_ids": ["TODO", "TODO", "TODO"],
+  "metadata_filter": {
+    "username": "abdullah.said",
+    "domain_in": ["repo:TODO", "general_workflow"],
+    "datetime_lt": "cutoff_ts"
+  },
+  "score_weights": { "semantic": 0.75, "recency": 0.15, "confidence": 0.10 },
+  "recency_halflife_days": 120,
+  "top_k": 12,
+  "token_budget": 1200,
+  "tie_breaker": ["confidence_desc", "source_datetime_desc", "memory_id_asc"],
+  "render_template_version": "v1"
+}
