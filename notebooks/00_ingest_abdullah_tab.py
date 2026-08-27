@@ -268,6 +268,33 @@ df_new = spark.createDataFrame(
 df_new.createOrReplaceTempView("new_rows")
 print(f"Source DataFrame rows    : {df_new.count()}")
 
+# Ensure schema + target table exist (SPEC §3.1) BEFORE the MERGE. This notebook
+# must be self-sufficient: it cannot rely on _setup_uc_objects having run in a
+# separate (serverless) session, and it must never "succeed" by MERGE-ing into a
+# table that is absent. CREATE ... IF NOT EXISTS is idempotent and byte-for-byte
+# matches the SPEC §3.1 contract in _setup_uc_objects.
+spark.sql(f"CREATE SCHEMA IF NOT EXISTS {CATALOG}.{SCHEMA}")
+spark.sql(f"""
+CREATE TABLE IF NOT EXISTS {TABLE} (
+  username         STRING    NOT NULL,
+  query_text       STRING,
+  response_text    STRING,
+  chat_step        BIGINT    NOT NULL,
+  conversation_id  STRING    NOT NULL,
+  source_tool      STRING    NOT NULL,
+  event_datetime   TIMESTAMP NOT NULL,
+  ingested_at      TIMESTAMP NOT NULL,
+  source_name      STRING    NOT NULL,
+  row_hash         STRING    NOT NULL
+)
+USING DELTA
+TBLPROPERTIES ('delta.enableChangeDataFeed' = 'true')
+""")
+assert spark.catalog.tableExists(TABLE), (
+    f"Target table {TABLE} does not exist after CREATE TABLE IF NOT EXISTS"
+)
+print(f"Target table ready       : {TABLE}")
+
 # Idempotent MERGE — insert only rows whose row_hash is not already in target
 spark.sql(f"""
 MERGE INTO {TABLE} AS tgt
@@ -295,6 +322,22 @@ print(f"  other                  : {count_other}")
 
 assert count_other == 0, (
     f"Contamination: {count_other} rows with username != '{USERNAME_FILTER}'"
+)
+
+# Fail hard if the MERGE did not actually populate the table. count_other==0 and
+# hash-uniqueness are both vacuously true for an EMPTY table, so those checks
+# alone let an empty/absent-data run pass — assert the table is non-empty, holds
+# the expected ~247 rows, and contains ONLY the target user.
+assert count_total > 0, (
+    f"Target table {TABLE} is empty after MERGE — no rows were ingested"
+)
+assert COUNT_LO <= count_total <= COUNT_HI, (
+    f"Post-MERGE row count {count_total} outside expected range "
+    f"[{COUNT_LO}, {COUNT_HI}] — ingestion did not land the expected ~247 rows"
+)
+assert count_user == count_total, (
+    f"Target table {TABLE} holds non-'{USERNAME_FILTER}' rows: "
+    f"total={count_total} user={count_user}"
 )
 
 # Assert post-MERGE row_hash uniqueness (MERGE must not produce duplicates)
