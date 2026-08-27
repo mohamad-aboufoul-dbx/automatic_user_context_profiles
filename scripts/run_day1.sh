@@ -10,13 +10,10 @@
 set -euo pipefail
 
 PROFILE="${1:-fe-ai-sage}"
-WORKSPACE_PATH="/Users/abdullah.said@databricks.com/hackathon_auto_profiles"
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 POLL_INTERVAL=20   # seconds between lifecycle state polls
 MAX_WAIT=1800      # abort if a run has not completed in 30 minutes
-SPARK_VERSION="15.4.x-scala2.12"
-NODE_TYPE="i3.xlarge"
-NUM_WORKERS=1      # standard single-worker cluster (no conflicting singleNode profile)
+# WORKSPACE_PATH is derived from the authenticated user after step [0].
 
 # Unity Catalog staging target (public DBFS root is disabled on this workspace).
 CATALOG="ai_fde_hackathon_catalog"
@@ -46,6 +43,7 @@ ME=$(databricks current-user me --profile "$PROFILE" \
      | python3 -c "import json,sys; print(json.load(sys.stdin)['userName'])" 2>&1) \
   || die "Auth check failed. Run: databricks auth login --host https://fe-ai-sage.cloud.databricks.com --profile $PROFILE"
 echo "    Authenticated as: $ME"
+WORKSPACE_PATH="/Users/$ME/hackathon_auto_profiles"
 
 # ---------------------------------------------------------------------------
 # 1. Ensure UC schema + volume exist, then upload CSV fallback to the volume
@@ -104,7 +102,8 @@ done
 # ---------------------------------------------------------------------------
 
 # submit_notebook_run <notebook_path> <run_name> <profile>
-# Echoes the run_id to stdout.
+# Submits a serverless one-time run and echoes the run_id to stdout.
+# Uses the current CLI: `databricks jobs submit` with tasks-array payload.
 submit_notebook_run() {
     local NB_PATH="$1"
     local RUN_NAME="$2"
@@ -115,20 +114,20 @@ submit_notebook_run() {
 import json
 payload = {
     "run_name": "$RUN_NAME",
-    "new_cluster": {
-        "spark_version": "$SPARK_VERSION",
-        "node_type_id":  "$NODE_TYPE",
-        "num_workers":    $NUM_WORKERS,
-    },
-    "notebook_task": {
-        "notebook_path": "$NB_PATH",
-        "source":        "WORKSPACE",
-    },
+    "tasks": [
+        {
+            "task_key": "main",
+            "notebook_task": {
+                "notebook_path": "$NB_PATH",
+                "source":        "WORKSPACE",
+            },
+        }
+    ],
 }
 print(json.dumps(payload))
 PY
 )
-    databricks runs submit --json "$PAYLOAD" --profile "$PROFILE" \
+    databricks jobs submit --no-wait --json "$PAYLOAD" -o json --profile "$PROFILE" \
       | python3 -c "import json,sys; print(json.load(sys.stdin)['run_id'])"
 }
 
@@ -142,7 +141,7 @@ wait_for_run() {
 
     while [ $elapsed -lt $MAX_WAIT ]; do
         local LC_STATE
-        LC_STATE=$(databricks runs get --run-id "$RUN_ID" --profile "$PROFILE" \
+        LC_STATE=$(databricks jobs get-run "$RUN_ID" -o json --profile "$PROFILE" \
             | python3 -c "
 import json,sys
 d=json.load(sys.stdin)
@@ -165,7 +164,7 @@ print(d['state']['life_cycle_state'])
     fi
 
     local RESULT_STATE
-    RESULT_STATE=$(databricks runs get --run-id "$RUN_ID" --profile "$PROFILE" \
+    RESULT_STATE=$(databricks jobs get-run "$RUN_ID" -o json --profile "$PROFILE" \
         | python3 -c "
 import json,sys
 d=json.load(sys.stdin)
@@ -173,7 +172,7 @@ print(d['state'].get('result_state','UNKNOWN'))
 ")
     if [ "$RESULT_STATE" != "SUCCESS" ]; then
         echo "    RESULT: $RESULT_STATE"
-        echo "    Inspect run: databricks runs get --run-id $RUN_ID --profile $PROFILE"
+        echo "    Inspect run: databricks jobs get-run $RUN_ID --profile $PROFILE"
         die "Notebook run failed (run_id=$RUN_ID result=$RESULT_STATE)"
     fi
     echo "    RESULT: $RESULT_STATE"
