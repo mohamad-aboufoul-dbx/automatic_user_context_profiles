@@ -192,23 +192,14 @@ validate_sentinel() {
     TASK_RUN_ID=$(databricks jobs get-run "$RUN_ID" -o json --profile "$PROFILE" \
         | python3 -c "import json,sys; print(json.load(sys.stdin)['tasks'][0]['run_id'])")
 
+    # Pipe the CLI JSON straight into a standalone parser script. Because there
+    # is no heredoc, stdin carries the piped JSON (the previous `python3 - <<PY`
+    # form let the heredoc shadow stdin, so json.load(sys.stdin) saw nothing and
+    # raised JSONDecodeError). The expected sentinel is passed as argv, not
+    # interpolated into Python source.
     databricks jobs get-run-output "$TASK_RUN_ID" -o json --profile "$PROFILE" \
-    | python3 - << PY || die "Sentinel validation FAILED for run_id=$RUN_ID (task=$TASK_RUN_ID)"
-import json, sys
-expected = "$EXPECTED"
-d = json.load(sys.stdin)
-raw = (d.get("notebook_output") or {}).get("result") or ""
-try:
-    sentinel = json.loads(raw).get("sentinel", "")
-except Exception:
-    sentinel = ""
-if sentinel == expected:
-    print(f"    sentinel OK: {sentinel}")
-else:
-    print(f"    SENTINEL FAIL: expected={expected!r} got={sentinel!r} (raw={raw[:200]!r})",
-          file=sys.stderr)
-    sys.exit(1)
-PY
+      | python3 "$REPO_ROOT/scripts/_check_sentinel.py" "$EXPECTED" \
+      || die "Sentinel validation FAILED for run_id=$RUN_ID (task=$TASK_RUN_ID)"
 }
 
 # ---------------------------------------------------------------------------
