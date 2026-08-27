@@ -178,6 +178,39 @@ print(d['state'].get('result_state','UNKNOWN'))
     echo "    RESULT: $RESULT_STATE"
 }
 
+# validate_sentinel <parent_run_id> <expected_sentinel> <profile>
+# Validates that the notebook called dbutils.notebook.exit with the expected
+# sentinel JSON. A run that only executed its first cell (imports) would never
+# reach the exit call, so a missing/wrong sentinel proves incomplete execution.
+validate_sentinel() {
+    local RUN_ID="$1"
+    local EXPECTED="$2"
+    local PROFILE="$3"
+
+    # Get the task-level run_id from the parent run
+    local TASK_RUN_ID
+    TASK_RUN_ID=$(databricks jobs get-run "$RUN_ID" -o json --profile "$PROFILE" \
+        | python3 -c "import json,sys; print(json.load(sys.stdin)['tasks'][0]['run_id'])")
+
+    databricks jobs get-run-output "$TASK_RUN_ID" -o json --profile "$PROFILE" \
+    | python3 - << PY || die "Sentinel validation FAILED for run_id=$RUN_ID (task=$TASK_RUN_ID)"
+import json, sys
+expected = "$EXPECTED"
+d = json.load(sys.stdin)
+raw = (d.get("notebook_output") or {}).get("result") or ""
+try:
+    sentinel = json.loads(raw).get("sentinel", "")
+except Exception:
+    sentinel = ""
+if sentinel == expected:
+    print(f"    sentinel OK: {sentinel}")
+else:
+    print(f"    SENTINEL FAIL: expected={expected!r} got={sentinel!r} (raw={raw[:200]!r})",
+          file=sys.stderr)
+    sys.exit(1)
+PY
+}
+
 # ---------------------------------------------------------------------------
 # 3. Run notebooks in order
 # ---------------------------------------------------------------------------
@@ -185,18 +218,21 @@ echo "[3] Running notebooks in order..."
 echo ""
 
 for ENTRY in \
-    "_setup_uc_objects:day1-setup" \
-    "00_ingest_abdullah_tab:day1-ingest" \
-    "01_sessionize:day1-sessionize" \
+    "_setup_uc_objects:day1-setup:setup:OK" \
+    "00_ingest_abdullah_tab:day1-ingest:ingest:OK" \
+    "01_sessionize:day1-sessionize:sessionize:OK" \
 ; do
     NB_SHORT="${ENTRY%%:*}"
-    RUN_NAME="${ENTRY##*:}"
+    REST="${ENTRY#*:}"
+    RUN_NAME="${REST%%:*}"
+    SENTINEL="${REST#*:}"
     NB_FULL="$WORKSPACE_PATH/$NB_SHORT"
 
     echo "  [run] $NB_FULL"
     RUN_ID=$(submit_notebook_run "$NB_FULL" "$RUN_NAME" "$PROFILE")
     echo "    run_id=$RUN_ID — waiting for completion..."
     wait_for_run "$RUN_ID" "$PROFILE"
+    validate_sentinel "$RUN_ID" "$SENTINEL" "$PROFILE"
 done
 
 # ---------------------------------------------------------------------------

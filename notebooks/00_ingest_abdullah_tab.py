@@ -1,4 +1,7 @@
 # Databricks notebook source
+
+# COMMAND ----------
+
 # MAGIC %md
 # MAGIC # 00 — Ingest Abdullah Tab → raw_conversations_abdullah_said
 # MAGIC
@@ -15,7 +18,9 @@
 # MAGIC   - Source row_hashes unique after dedup
 # MAGIC   - Post-MERGE row_hashes unique in target table
 
+
 # COMMAND ----------
+
 
 import hashlib
 from datetime import datetime, timezone
@@ -42,8 +47,12 @@ USERNAME_FILTER = "abdullah.said"
 COUNT_LO = 240
 COUNT_HI = 260
 
+
 # COMMAND ----------
+
 # MAGIC %md ## 1. Fetch raw rows (Sheets API → CSV fallback)
+
+# COMMAND ----------
 
 def fetch_from_sheets() -> list[dict]:
     """Fetch Abdullah tab from Google Sheets using ADC token."""
@@ -109,8 +118,12 @@ if records is None:
 
 print(f"Source: {source_path}  |  raw rows: {len(records)}")
 
+
 # COMMAND ----------
+
 # MAGIC %md ## 2. Conform + hash + validate
+
+# COMMAND ----------
 
 DATETIME_FMTS = [
     "%Y-%m-%dT%H:%M:%S.%fZ",
@@ -218,8 +231,12 @@ assert all(r["conversation_id"] for r in conformed), (
     "Empty conversation_id after filter"
 )
 
+
 # COMMAND ----------
+
 # MAGIC %md ## 3. Pre-MERGE deduplication on row_hash
+
+# COMMAND ----------
 
 # Deduplicate source rows on row_hash before MERGE.
 # Without this, duplicate source rows with the same hash would both be
@@ -241,8 +258,12 @@ hashes = [r["row_hash"] for r in conformed]
 assert len(set(hashes)) == len(hashes), "Logic error: duplicates remain after dedup"
 print(f"Post-dedup source rows   : {len(conformed)} (unique hashes)")
 
+
 # COMMAND ----------
+
 # MAGIC %md ## 4. Build Spark DataFrame + MERGE
+
+# COMMAND ----------
 
 SCHEMA_DEF = StructType([
     StructField("username",        StringType(),    False),
@@ -304,8 +325,12 @@ WHEN NOT MATCHED THEN INSERT *
 """)
 print("MERGE complete")
 
+
 # COMMAND ----------
+
 # MAGIC %md ## 5. Post-MERGE verification
+
+# COMMAND ----------
 
 count_total = spark.sql(f"SELECT COUNT(*) AS n FROM {TABLE}").first().n
 count_user  = spark.sql(
@@ -352,8 +377,12 @@ assert n_hash_dupes == 0, (
 )
 print("row_hash uniqueness      : PASS")
 
+
 # COMMAND ----------
+
 # MAGIC %md ## 6. Sample row
+
+# COMMAND ----------
 
 sample = spark.sql(f"""
 SELECT username, conversation_id, chat_step, source_tool,
@@ -373,8 +402,12 @@ if sample is not None:
 else:
     print("WARNING: table is empty — no sample to display")
 
+
 # COMMAND ----------
+
 # MAGIC %md ## 7. Date distribution
+
+# COMMAND ----------
 
 spark.sql(f"""
 SELECT DATE_TRUNC('month', event_datetime) AS month,
@@ -384,3 +417,17 @@ FROM {TABLE}
 GROUP BY 1
 ORDER BY 1
 """).show(20, truncate=False)
+
+
+
+# COMMAND ----------
+
+# Sentinel: must be the last thing that executes.
+# The runner validates this output; SUCCESS without it means the notebook
+# did not execute its full body.
+import json as _j
+dbutils.notebook.exit(_j.dumps({
+    "sentinel":   "ingest:OK",
+    "rows_total": count_total,
+    "rows_user":  count_user,
+}))

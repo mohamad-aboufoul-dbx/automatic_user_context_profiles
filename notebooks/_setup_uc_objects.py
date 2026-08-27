@@ -1,4 +1,7 @@
 # Databricks notebook source
+
+# COMMAND ----------
+
 # MAGIC %md
 # MAGIC # Setup UC Objects — ai_fde_hackathon_catalog.automatic_user_context_profiles
 # MAGIC
@@ -7,7 +10,9 @@
 # MAGIC Each table is verified against the SPEC schema after creation; the notebook
 # MAGIC fails loudly on any column / type / nullability drift.
 
+
 # COMMAND ----------
+
 
 from pyspark.sql.types import (
     StructType, StructField,
@@ -158,14 +163,22 @@ def verify_schema(table_short: str, full_name: str) -> None:
     print(f"  schema OK — {len(actual_fields)} columns match SPEC")
 
 
+
 # COMMAND ----------
+
 # MAGIC %md ## Create schema
+
+# COMMAND ----------
 
 spark.sql(f"CREATE SCHEMA IF NOT EXISTS {CATALOG}.{SCHEMA}")
 print(f"Schema: {CATALOG}.{SCHEMA}")
 
+
 # COMMAND ----------
+
 # MAGIC %md ## §3.1 raw_conversations_abdullah_said
+
+# COMMAND ----------
 
 spark.sql(f"""
 CREATE TABLE IF NOT EXISTS {CATALOG}.{SCHEMA}.raw_conversations_abdullah_said (
@@ -187,8 +200,12 @@ verify_schema("raw_conversations_abdullah_said",
               f"{CATALOG}.{SCHEMA}.raw_conversations_abdullah_said")
 print("raw_conversations_abdullah_said: OK")
 
+
 # COMMAND ----------
+
 # MAGIC %md ## §3.2 atomic_memories (SHARED CONTRACT — exact schema required)
+
+# COMMAND ----------
 
 spark.sql(f"""
 CREATE TABLE IF NOT EXISTS {CATALOG}.{SCHEMA}.atomic_memories (
@@ -214,8 +231,12 @@ TBLPROPERTIES ('delta.enableChangeDataFeed' = 'true')
 verify_schema("atomic_memories", f"{CATALOG}.{SCHEMA}.atomic_memories")
 print("atomic_memories: OK")
 
+
 # COMMAND ----------
+
 # MAGIC %md ## §3.3 eval_tasks
+
+# COMMAND ----------
 
 spark.sql(f"""
 CREATE TABLE IF NOT EXISTS {CATALOG}.{SCHEMA}.eval_tasks (
@@ -240,8 +261,12 @@ USING DELTA
 verify_schema("eval_tasks", f"{CATALOG}.{SCHEMA}.eval_tasks")
 print("eval_tasks: OK")
 
+
 # COMMAND ----------
+
 # MAGIC %md ## §3.4 memory_artifacts
+
+# COMMAND ----------
 
 spark.sql(f"""
 CREATE TABLE IF NOT EXISTS {CATALOG}.{SCHEMA}.memory_artifacts (
@@ -264,8 +289,12 @@ USING DELTA
 verify_schema("memory_artifacts", f"{CATALOG}.{SCHEMA}.memory_artifacts")
 print("memory_artifacts: OK")
 
+
 # COMMAND ----------
+
 # MAGIC %md ## §3.5 eval_runs
+
+# COMMAND ----------
 
 spark.sql(f"""
 CREATE TABLE IF NOT EXISTS {CATALOG}.{SCHEMA}.eval_runs (
@@ -303,8 +332,12 @@ USING DELTA
 verify_schema("eval_runs", f"{CATALOG}.{SCHEMA}.eval_runs")
 print("eval_runs: OK")
 
+
 # COMMAND ----------
+
 # MAGIC %md ## Final verification — all 5 tables present with correct schemas
+
+# COMMAND ----------
 
 REQUIRED_TABLES = set(EXPECTED_SCHEMA.keys())
 actual_tables = {
@@ -317,3 +350,13 @@ assert not missing, f"Missing tables: {missing}"
 print(f"\nAll {len(REQUIRED_TABLES)} required tables present and schema-verified:")
 for tbl in sorted(REQUIRED_TABLES):
     print(f"  {CATALOG}.{SCHEMA}.{tbl}")
+
+
+
+# COMMAND ----------
+
+# Sentinel: must be the last thing that executes.
+# The runner validates this output; SUCCESS without it means the notebook
+# did not execute its full body.
+import json as _j
+dbutils.notebook.exit(_j.dumps({"sentinel": "setup:OK"}))

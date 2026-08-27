@@ -1,4 +1,7 @@
 # Databricks notebook source
+
+# COMMAND ----------
+
 # MAGIC %md
 # MAGIC # 01 — Sessionize raw_conversations_abdullah_said
 # MAGIC
@@ -17,7 +20,9 @@
 # MAGIC
 # MAGIC No extraction, no signal parsing, no UDFs. Extraction belongs in notebook 02.
 
+
 # COMMAND ----------
+
 
 from pyspark.sql import functions as F
 
@@ -29,8 +34,12 @@ df_raw = spark.table(RAW_TBL)
 raw_count = df_raw.count()
 print(f"Raw rows loaded: {raw_count}")
 
+
 # COMMAND ----------
+
 # MAGIC %md ## Sessionize — one row per conversation_id
+
+# COMMAND ----------
 
 # Build a struct with sort keys first so sort_array is deterministic:
 #   primary   : event_datetime  (ascending)
@@ -68,8 +77,12 @@ df_sessions = (
 session_count = df_sessions.count()
 print(f"Sessions produced: {session_count}")
 
+
 # COMMAND ----------
+
 # MAGIC %md ## Verify: exactly one row per conversation_id
+
+# COMMAND ----------
 
 distinct_conv_ids = df_raw.select("conversation_id").distinct().count()
 assert session_count == distinct_conv_ids, (
@@ -78,13 +91,21 @@ assert session_count == distinct_conv_ids, (
 )
 print(f"PASS: one session per conversation_id ({session_count})")
 
+
 # COMMAND ----------
+
 # MAGIC %md ## Publish as temp view for downstream notebooks
+
+# COMMAND ----------
 
 df_sessions.createOrReplaceTempView("sessions_abdullah_said")
 
+
 # COMMAND ----------
+
 # MAGIC %md ## Sample session record (complete ordered events)
+
+# COMMAND ----------
 
 sample = (
     spark.sql("""
@@ -113,8 +134,12 @@ if sample is not None:
 else:
     print("WARNING: no sessions — table may be empty")
 
+
 # COMMAND ----------
+
 # MAGIC %md ## Timeline overview
+
+# COMMAND ----------
 
 spark.sql("""
 SELECT DATE_TRUNC('month', started_at) AS month,
@@ -124,3 +149,16 @@ FROM sessions_abdullah_said
 GROUP BY 1
 ORDER BY 1
 """).show(20, truncate=False)
+
+
+
+# COMMAND ----------
+
+# Sentinel: must be the last thing that executes.
+# The runner validates this output; SUCCESS without it means the notebook
+# did not execute its full body.
+import json as _j
+dbutils.notebook.exit(_j.dumps({
+    "sentinel":  "sessionize:OK",
+    "sessions":  session_count,
+}))
