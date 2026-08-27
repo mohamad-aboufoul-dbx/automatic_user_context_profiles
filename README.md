@@ -1,1 +1,5 @@
 # automatic_user_context_profiles
+
+Users have a lot of context spread throughout their chats with agents, documentation they've set up, slack threads, emails, etc. They will have several tasks to conduct on a project and whenever they start a new session with any chatbot, they practically have to start from scratch - explaining themselves and what they need. Add on to it that they often have to ask several follow ups and/or argue with the agent to give them what they're looking for, and we find that a good chunk of the day can be wasted. 
+
+Automatic User Context Profiles are a means of consolidating information throughout a user's chat history, documentation, and more to give the agents they work with the right context before moving forward. The goal is to give agents a better understanding of where the user's at, their overall goals, and the question behind the question, so they can respond more effectively, saving time.
