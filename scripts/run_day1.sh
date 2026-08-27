@@ -227,10 +227,36 @@ for ENTRY in \
 done
 
 # ---------------------------------------------------------------------------
-# Done
+# Done — Day-1 ingestion/sessionization only
 # ---------------------------------------------------------------------------
 echo ""
 echo "=== All Day-1 notebooks completed successfully ==="
-echo "    _setup_uc_objects   : UC schema + all 5 tables created and verified"
+echo "    _setup_uc_objects      : UC schema + all 5 tables created and verified"
 echo "    00_ingest_abdullah_tab : data loaded into raw_conversations_abdullah_said"
 echo "    01_sessionize          : sessions view populated"
+
+# ---------------------------------------------------------------------------
+# HARD STOP — contamination-approval gate before any extraction
+# ---------------------------------------------------------------------------
+# This runner intentionally enumerates ONLY setup + ingest + sessionize above.
+# Extraction (notebook 02) is NOT run here and must NOT begin until a human has
+# explicitly approved the contamination guards. Making this a prominent terminal
+# message prevents "Day-1 succeeded" from being read as "cleared to extract".
+cat <<'STOP'
+
+################################################################################
+#                          STOP — HUMAN APPROVAL REQUIRED                       #
+################################################################################
+# Day-1 (ingest + sessionize) is complete. Extraction is GATED and has NOT run.
+#
+# notebook 02 (extract_atomic_memories) is deliberately absent from this runner
+# and MUST NOT be started until a human explicitly signs off on ALL of:
+#
+#   1. CUTOFF_TS                — the temporal contamination cutoff
+#   2. Three held-out /goal tasks
+#   3. Pinned starting commits + the conversation_id exclusions for each task
+#
+# Until that sign-off is recorded, do not run extraction, embedding, compilation,
+# or any scored run. This is a review checkpoint, not a green light.
+################################################################################
+STOP

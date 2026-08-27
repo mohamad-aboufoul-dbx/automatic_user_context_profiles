@@ -5,10 +5,16 @@
 # MAGIC %md
 # MAGIC # 00 — Ingest Abdullah Tab → raw_conversations_abdullah_said
 # MAGIC
-# MAGIC Loads the 'Abdullah' tab from the 'Chatbot conversations' Google Sheet
+# MAGIC Loads the 'Abdullah' tab of the 'Chatbot conversations' data
 # MAGIC (spreadsheet_id=1NCFFYeCPs-TS3YA6r3Y9y8p0LtUy2cY0-qa8CMl1iEI, gid=1354471250)
 # MAGIC into UC table raw_conversations_abdullah_said via idempotent MERGE on row_hash.
-# MAGIC Falls back to a CSV in a UC Volume (CSV_VOLUME) when the Sheets API is unreachable.
+# MAGIC
+# MAGIC Source selection:
+# MAGIC   - DEFAULT (INGEST_SOURCE=frozen_csv): the frozen committed CSV staged in
+# MAGIC     the UC Volume — the reviewed, reproducible snapshot. Authoritative.
+# MAGIC   - OPT-IN (INGEST_SOURCE=sheets): deliberately re-pull from the LIVE
+# MAGIC     Google Sheet. Loudly announced; not reproducible. There is NO silent
+# MAGIC     preference for the mutable Sheet.
 # MAGIC
 # MAGIC Invariants asserted (all hard failures):
 # MAGIC   - Source row count in [240, 260] (~247 expected)
@@ -36,11 +42,23 @@ TABLE           = f"{CATALOG}.{SCHEMA}.raw_conversations_abdullah_said"
 SOURCE_NAME     = "chatbot_conversations_abdullah"
 SPREADSHEET     = "1NCFFYeCPs-TS3YA6r3Y9y8p0LtUy2cY0-qa8CMl1iEI"
 RANGE_NAME      = "Abdullah"
-# CSV fallback — upload data/raw_abdullah_tab.csv to this UC Volume path before running.
-# Public DBFS root is disabled on this workspace, so a Unity Catalog Volume is the
-# supported staging area. run_day1.sh creates the volume and uploads the file.
+# The frozen, committed CSV — staged into a UC Volume by run_day1.sh — is the
+# AUTHORITATIVE Day-1 source. It is the reviewed snapshot (~247 rows); using it
+# by default makes runs reproducible and prevents a later edit to the live Sheet
+# from silently replacing the reviewed data while still passing the count/user
+# guards. (Public DBFS root is disabled here, so the Volume is the staging area.)
 CSV_VOLUME      = "/Volumes/ai_fde_hackathon_catalog/automatic_user_context_profiles/raw/raw_abdullah_tab.csv"
 USERNAME_FILTER = "abdullah.said"
+
+# Source selection — DEFAULT is the frozen committed CSV (reproducible).
+# Live Google Sheets is OPT-IN only: set widget/param INGEST_SOURCE="sheets"
+# to deliberately re-pull from the (mutable) Sheet. Any other value → frozen CSV.
+try:
+    dbutils.widgets.text("INGEST_SOURCE", "frozen_csv")  # noqa: F821 (Databricks-injected)
+    INGEST_SOURCE = dbutils.widgets.get("INGEST_SOURCE").strip().lower()  # noqa: F821
+except Exception:
+    INGEST_SOURCE = "frozen_csv"
+USE_SHEETS = (INGEST_SOURCE == "sheets")
 
 # Expected row count bounds (hard assertion).
 # Adjust only if the source sheet is intentionally extended.
@@ -50,7 +68,7 @@ COUNT_HI = 260
 
 # COMMAND ----------
 
-# MAGIC %md ## 1. Fetch raw rows (Sheets API → CSV fallback)
+# MAGIC %md ## 1. Fetch raw rows (frozen Volume CSV by default; Sheets is opt-in)
 
 # COMMAND ----------
 
@@ -95,26 +113,37 @@ def fetch_from_csv(path: str) -> list[dict]:
 
 
 records: list[dict] | None = None
-source_path = "sheets_api"
+source_path = None
 errors: list[str] = []
 
-try:
+if USE_SHEETS:
+    # OPT-IN: deliberately re-pull from the live (mutable) Google Sheet.
+    # Loudly announced so a Sheets-sourced run is never mistaken for the frozen
+    # reproducible snapshot. No silent fallback to CSV here — if an explicit
+    # Sheets pull is requested and fails, fail hard rather than quietly swapping
+    # in a different source.
+    print("=" * 70)
+    print("INGEST_SOURCE=sheets — pulling from the LIVE Google Sheet (OPT-IN).")
+    print("This is NOT the frozen reviewed snapshot and is not reproducible.")
+    print("=" * 70)
     records = fetch_from_sheets()
+    source_path = f"sheets_api:{SPREADSHEET}/{RANGE_NAME}"
     print(f"Sheets API: {len(records)} rows")
-except Exception as exc:
-    errors.append(f"Sheets API: {exc}")
-    print(f"Sheets API unavailable: {exc}")
-
-if records is None:
+else:
+    # DEFAULT: frozen committed CSV staged in the UC Volume — authoritative,
+    # reproducible, reviewed snapshot.
+    print(f"INGEST_SOURCE=frozen_csv (default) — using reviewed snapshot {CSV_VOLUME}")
     try:
         records = fetch_from_csv(CSV_VOLUME)
         source_path = CSV_VOLUME
-        print(f"CSV fallback ({CSV_VOLUME}): {len(records)} rows")
+        print(f"Frozen CSV: {len(records)} rows")
     except Exception as exc:
         errors.append(f"CSV {CSV_VOLUME}: {exc}")
 
 if records is None:
-    raise RuntimeError("All data sources failed:\n" + "\n".join(errors))
+    raise RuntimeError(
+        "Ingest source failed (no silent fallback):\n" + "\n".join(errors)
+    )
 
 print(f"Source: {source_path}  |  raw rows: {len(records)}")
 
