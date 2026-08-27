@@ -84,6 +84,11 @@ echo "    Uploaded: $CSV_VOLUME_DEST"
 # 2. Import notebooks to workspace
 # ---------------------------------------------------------------------------
 echo "[2] Importing notebooks to workspace..."
+# Ensure the parent workspace folder exists (mkdirs creates parents and is a
+# no-op if the folder already exists). Import fails if the parent is missing.
+databricks workspace mkdirs "$WORKSPACE_PATH" --profile "$PROFILE" \
+  || die "Failed to create workspace directory $WORKSPACE_PATH"
+echo "    Workspace dir ready: $WORKSPACE_PATH"
 for nb in _setup_uc_objects 00_ingest_abdullah_tab 01_sessionize; do
     databricks workspace import "$WORKSPACE_PATH/$nb" \
       --file "$REPO_ROOT/notebooks/${nb}.py" \
