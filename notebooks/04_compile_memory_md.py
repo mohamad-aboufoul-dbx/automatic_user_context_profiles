@@ -500,8 +500,9 @@ df_art.createOrReplaceTempView("_new_artifacts")
 spark.sql(f"""
     MERGE INTO {ARTIFACTS_TBL} t
     USING _new_artifacts s
-    ON t.artifact_id = s.artifact_id
+    ON t.task_id = s.task_id AND t.arm = s.arm
     WHEN MATCHED THEN UPDATE SET
+        t.artifact_id         = s.artifact_id,
         t.task_id             = s.task_id,
         t.arm                 = s.arm,
         t.compiler_version    = s.compiler_version,
@@ -534,27 +535,25 @@ print(f"MERGE complete — {len(art_rows)} rows upserted into {ARTIFACTS_TBL}.")
 
 # COMMAND ----------
 
-_artifact_ids = [
-    make_artifact_id(_art["task_id"], _art["arm"], _art["result"].file_sha256)
-    for _art in artifacts
-]
-
-_id_rows = [(aid,) for aid in _artifact_ids]
-_id_schema = StructType([StructField("artifact_id", StringType(), False)])
-_id_df = spark.createDataFrame(_id_rows, schema=_id_schema)   # noqa: F821
-_id_df.createOrReplaceTempView("_expected_artifact_ids")
+_ta_rows   = [(_art["task_id"], _art["arm"]) for _art in artifacts]
+_ta_schema = StructType([
+    StructField("task_id", StringType(), False),
+    StructField("arm",     StringType(), False),
+])
+_ta_df = spark.createDataFrame(_ta_rows, schema=_ta_schema)   # noqa: F821
+_ta_df.createOrReplaceTempView("_expected_task_arms")
 
 _found = spark.sql(f"""
     SELECT COUNT(*) AS n
     FROM {ARTIFACTS_TBL} t
-    JOIN _expected_artifact_ids e
-      ON t.artifact_id = e.artifact_id
+    JOIN _expected_task_arms e
+      ON t.task_id = e.task_id AND t.arm = e.arm
 """).first()["n"]   # noqa: F821
 
 if _found != 12:
     raise RuntimeError(
         f"POST-MERGE ASSERTION FAILED: expected 12 rows in memory_artifacts "
-        f"matching our artifact_ids, found {_found}."
+        f"matching our (task_id, arm) pairs, found {_found}."
     )
 print(f"PASS: {_found} rows confirmed in {ARTIFACTS_TBL}.")
 
