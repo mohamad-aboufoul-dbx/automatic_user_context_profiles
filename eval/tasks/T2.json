@@ -1,0 +1,24 @@
+{
+  "task_id": "T2",
+  "goal_prompt": "/goal Create `notebooks/ues4_hdbscan_spike.py`, a Databricks-source notebook-style spike that runs **HDBSCAN** over L2-normalized SigLIP2 image embeddings to diagnose near-duplicate / exemplar structure for UES4 image selection. Discover RGB images from the configured dataset roots under `/Volumes/autonomy_dev/autonomy_dev_bronze/dirty_data/KAGGLE/` (handle subdirectories; skip missing/empty dirs as non-errors), exclude mask/label images. Provide clearly-marked configured dataset sections, embedding load/normalize, HDBSCAN fit with min_cluster_size/min_samples config, and cluster-size + noise-point + near-duplicate-pair diagnostics with markdown commentary. Notebook spike artifact only — do not add or modify pipeline source under `src/`. Acceptance: notebook parses as a Databricks source file and, on `autonomy_dev`, runs each dataset section end-to-end producing density-cluster diagnostics.",
+  "repository": "~/Projects/platform",
+  "starting_commit": "ac6a62b2c84fd228844ea0c1e0af726d2ac74bcc",
+  "temporal_cutoff": "2026-08-17T00:00:00Z",
+  "heldout_conversation_ids": [
+    "3b41f7ea-1a52-4b31-b27b-e1e9cb1d1a34"
+  ],
+  "allowed_domains": ["repo:platform", "general_workflow"],
+  "acceptance_command": "notebook notebooks/ues4_hdbscan_spike.py parses as Databricks source AND each configured dataset section executes on autonomy_dev (ws 5515503609081527) producing HDBSCAN density-cluster diagnostics",
+  "regression_command": null,
+  "required_files": ["notebooks/ues4_hdbscan_spike.py"],
+  "forbidden_files": [
+    "src/frame_generation/image_selection/auto_k.py",
+    "notebooks/ues4_auto_kmeans_spike.py",
+    "notebooks/ues4_candidate_graph_spike.py",
+    "notebooks/ues4_clustering_spike.py"
+  ],
+  "max_minutes": 30,
+  "max_tool_calls": 120,
+  "acceptance_type": "structural_live_workspace",
+  "task_definition_hash": "b2b1c5c0d268e308335bee369deba78df1e958e681323dd85f40ac5204220eee"
+}

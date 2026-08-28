@@ -1,0 +1,91 @@
+{
+  "_note": "Complete feature-cluster exclusion set from heldout-approval-packet.md §4. The temporal cutoff (2026-08-17T00:00Z) already excludes the entire UES4 program; these IDs are belt-and-suspenders.",
+  "T1_cluster": {
+    "description": "UES4 auto-k k-means module — impl + review-fix (Aug 21) and integration follow-ups (Aug 22)",
+    "conversation_ids": [
+      "d8d5b84d-1ddb-4c04-952a-3d071d5223c6",
+      "06147d1c-537a-4ac7-b210-43c5909ad7b3",
+      "15616d81-e31e-432c-b395-859f97a3689f",
+      "dae9f10f",
+      "5820684a",
+      "69f7003b",
+      "bee6864a",
+      "54f431ab",
+      "36b9bfa3",
+      "233a6c24"
+    ]
+  },
+  "T2_cluster": {
+    "description": "UES4 HDBSCAN near-duplicate / exemplar diagnostics spike (Aug 21) plus HDBSCAN-touching convs",
+    "conversation_ids": [
+      "3b41f7ea-1a52-4b31-b27b-e1e9cb1d1a34",
+      "6e4b3402",
+      "b0f6dbce"
+    ]
+  },
+  "T3_cluster": {
+    "description": "UES4 candidate-blocking + threshold-graph clustering spike (Aug 20) and Aug-17→19 design convs",
+    "conversation_ids": [
+      "c7b01e88-4076-4997-984a-5ec488d6b942",
+      "d7537515-d25c-4ad5-9cc7-d9fd979245b7",
+      "cdef3eb6-12fd-42f5-98fb-34139a6d3195",
+      "97e19ff4",
+      "137d36c8",
+      "ac12bd5c",
+      "b7b22d8e",
+      "4fc7d653",
+      "477e1874",
+      "8b3edc4b",
+      "01a011d0",
+      "01a01216",
+      "01a015eb",
+      "01a015f7",
+      "01a01acb",
+      "01a01b29",
+      "01a01b6f",
+      "01a01b75",
+      "01a01b79",
+      "01a01f70",
+      "01a01f77"
+    ]
+  },
+  "shared_ues4_program": {
+    "description": "SigLIP2 embedding-clustering sibling, design megasession, multi-feature launch convs, and Aug 22–24 integration/UES8/UES9/UES10 tail — excluded for all three tasks",
+    "conversation_ids": [
+      "486c522b-61b0-425e-8669-280abfa203f3",
+      "81189d5",
+      "07a9305a",
+      "bbd3d128",
+      "6e011c33",
+      "566160042386",
+      "38d34d89",
+      "07f02c96",
+      "84fb0195",
+      "c6ca284a",
+      "89e3cdc8",
+      "b25b2da6",
+      "6ee20497",
+      "55e02aa4",
+      "28339a95",
+      "461ad24",
+      "ae48ddb4",
+      "02214c3c",
+      "9ddd02bf",
+      "871507b6",
+      "5eed8adc",
+      "4e556a8c",
+      "da98fe98",
+      "01a03458"
+    ]
+  },
+  "precutoff_2025_review": {
+    "description": "2025 pre-cutoff convs that mention hdbscan / k-means / blocking in unrelated contexts — retained by cutoff but flagged for eyeballing before extraction (packet §8)",
+    "conversation_ids": [
+      "02c8e44d",
+      "118657a0",
+      "01f8b7a6",
+      "11d98f6d",
+      "11dd3914"
+    ]
+  }
+}

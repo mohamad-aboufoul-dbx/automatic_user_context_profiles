@@ -1,0 +1,34 @@
+{
+  "task_id": "T1",
+  "goal_prompt": "/goal Implement a reusable, air-gap-safe image-selection clustering module at `src/frame_generation/image_selection/`. Add `auto_k.py` and supporting `types.py`. Requirements: (1) `derive_k_range(n, *, min_cluster_size, max_cluster_size, max_k) -> list[int]` deriving a contiguous candidate-k range with k≥2 and giant/tiny-cluster guards; (2) an `AutoKClusterer` (config-driven) whose `.fit(embeddings)` scores each candidate k by silhouette minus giant-cluster and tiny-cluster penalties, dispatches deterministic k-means or mini-batch k-means as appropriate, selects medoid representatives per cluster, and returns a structured `KMeansResult` with per-cluster diagnostics. Coherence contract: never report a `selected_k` that disagrees with the effective emitted labels; no duplicate/fallback medoids for empty clusters; degenerate/collapsed cases return a coherent single-cluster result. Defer numpy/sklearn imports to call time so the module stays importable with no native wheels. Add `tests/unit/test_image_selection_auto_k.py` covering k-range derivation, penalty formulas, medoid validity, and collapse handling. Do not edit code outside `src/frame_generation/image_selection/` and `tests/unit/`. Acceptance: `pytest tests/unit/test_image_selection_auto_k.py` green; `ruff check` clean.",
+  "repository": "~/Projects/platform",
+  "starting_commit": "ac6a62b2c84fd228844ea0c1e0af726d2ac74bcc",
+  "temporal_cutoff": "2026-08-17T00:00:00Z",
+  "heldout_conversation_ids": [
+    "d8d5b84d-1ddb-4c04-952a-3d071d5223c6",
+    "06147d1c-537a-4ac7-b210-43c5909ad7b3",
+    "15616d81-e31e-432c-b395-859f97a3689f"
+  ],
+  "allowed_domains": ["repo:platform", "general_workflow"],
+  "acceptance_command": "pytest tests/unit/test_image_selection_auto_k.py -q",
+  "regression_command": null,
+  "required_files": [
+    "src/frame_generation/image_selection/auto_k.py",
+    "src/frame_generation/image_selection/types.py",
+    "src/frame_generation/image_selection/__init__.py"
+  ],
+  "forbidden_files": [
+    "notebooks/ues4_auto_kmeans_spike.py",
+    "notebooks/ues4_hdbscan_spike.py",
+    "notebooks/ues4_candidate_graph_spike.py",
+    "notebooks/ues4_clustering_spike.py"
+  ],
+  "max_minutes": 30,
+  "max_tool_calls": 120,
+  "acceptance_oracle": {
+    "source_commit": "98b8bd7",
+    "fixture_path": "tests/unit/test_image_selection_auto_k.py",
+    "note": "reference suite injected read-only at eval time; kept out of agent context"
+  },
+  "task_definition_hash": "8e7a2c8d9c59af6c420f31ac4af59a9cde6e9b6a5c1d99dc6f2c1d66bad422dd"
+}

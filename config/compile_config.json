@@ -1,13 +1,22 @@
 {
-  "embedding_model": "TODO-fixed-endpoint-id",
-  "cutoff_ts": "TODO-ISO8601-after-heldout-signoff",
-  "heldout_conversation_ids": ["TODO", "TODO", "TODO"],
+  "embedding_model": "databricks-gte-large-en",
+  "cutoff_ts": "2026-08-17T00:00:00Z",
+  "heldout_conversation_ids": [
+    "d8d5b84d-1ddb-4c04-952a-3d071d5223c6",
+    "06147d1c-537a-4ac7-b210-43c5909ad7b3",
+    "15616d81-e31e-432c-b395-859f97a3689f",
+    "3b41f7ea-1a52-4b31-b27b-e1e9cb1d1a34",
+    "c7b01e88-4076-4997-984a-5ec488d6b942",
+    "d7537515-d25c-4ad5-9cc7-d9fd979245b7",
+    "cdef3eb6-12fd-42f5-98fb-34139a6d3195",
+    "486c522b-61b0-425e-8669-280abfa203f3"
+  ],
   "metadata_filter": {
     "username": "abdullah.said",
-    "domain_in": ["repo:TODO", "general_workflow"],
+    "domain_in": ["repo:platform", "general_workflow"],
     "datetime_lt": "cutoff_ts"
   },
-  "score_weights": { "semantic": 0.75, "recency": 0.15, "confidence": 0.10 },
+  "score_weights": {"semantic": 0.75, "recency": 0.15, "confidence": 0.10},
   "recency_halflife_days": 120,
   "top_k": 12,
   "token_budget": 1200,

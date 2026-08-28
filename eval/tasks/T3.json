@@ -1,0 +1,26 @@
+{
+  "task_id": "T3",
+  "goal_prompt": "/goal Create `notebooks/ues4_candidate_graph_spike.py`, a Databricks-source notebook-style spike for UES4 **candidate blocking + threshold-graph clustering**. Over L2-normalized SigLIP2 embeddings from the configured `/Volumes/autonomy_dev/autonomy_dev_bronze/dirty_data/KAGGLE/` dataset roots (plus the drone-footage dataset path as a first-class section; handle subdirectories, skip missing/empty as non-errors), build a blocked candidate-pair set, threshold pairs by cosine similarity, form a similarity graph, and cluster via connected components. Provide configured dataset sections, blocking/threshold config, graph construction, connected-component cluster extraction, and cluster-size/edge-density diagnostics with markdown commentary. Notebook spike artifact only — do not add or modify pipeline source under `src/`. Acceptance: notebook parses as a Databricks source file and, on `autonomy_dev`, runs each dataset section producing connected-component clusters.",
+  "repository": "~/Projects/platform",
+  "starting_commit": "ac6a62b2c84fd228844ea0c1e0af726d2ac74bcc",
+  "temporal_cutoff": "2026-08-17T00:00:00Z",
+  "heldout_conversation_ids": [
+    "c7b01e88-4076-4997-984a-5ec488d6b942",
+    "d7537515-d25c-4ad5-9cc7-d9fd979245b7",
+    "cdef3eb6-12fd-42f5-98fb-34139a6d3195"
+  ],
+  "allowed_domains": ["repo:platform", "general_workflow"],
+  "acceptance_command": "notebook notebooks/ues4_candidate_graph_spike.py parses as Databricks source AND each configured dataset section executes on autonomy_dev (ws 5515503609081527) producing connected-component clusters",
+  "regression_command": null,
+  "required_files": ["notebooks/ues4_candidate_graph_spike.py"],
+  "forbidden_files": [
+    "src/frame_generation/image_selection/auto_k.py",
+    "notebooks/ues4_auto_kmeans_spike.py",
+    "notebooks/ues4_hdbscan_spike.py",
+    "notebooks/ues4_clustering_spike.py"
+  ],
+  "max_minutes": 30,
+  "max_tool_calls": 120,
+  "acceptance_type": "structural_live_workspace",
+  "task_definition_hash": "8535826d3ca9d730d8e1aa4b0c17fbad777eaf15b9aff8005be80efc4e3cf1cd"
+}
