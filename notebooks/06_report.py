@@ -75,6 +75,8 @@ DEFAULT_WAREHOUSE_ID = "41659c95dacd3bf0"
 DEFAULT_PROFILE = "hackathon"
 
 _EVAL_RUNS_COLUMNS = (
+    "run_id",
+    "started_at",
     "task_id",
     "arm",
     "repeat_number",
@@ -116,7 +118,7 @@ def read_eval_runs(warehouse_id: str, profile: str) -> list[dict]:
     resp = w.statement_execution.execute_statement(
         statement=sql,
         warehouse_id=warehouse_id,
-        wait_timeout="60s",
+        wait_timeout="50s",  # API max is 50s (0 disables); 60s is rejected
     )
     if resp.status.state != StatementState.SUCCEEDED:
         raise RuntimeError(
@@ -279,6 +281,14 @@ def parse_args() -> argparse.Namespace:
             "Non-destructive: filters the read rows, does not modify eval_runs."
         ),
     )
+    parser.add_argument(
+        "--include-run-ids", nargs="*", default=[], metavar="RUN_ID",
+        help=(
+            "If given, keep ONLY these run_ids (applied before --exclude-run-ids). "
+            "Use to restrict the report to one canonical matrix, ignoring historical "
+            "dev/smoke rows. Non-destructive."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -293,6 +303,16 @@ def main() -> None:
 
     rows = read_eval_runs(args.warehouse, args.profile)
     print(f"[06_report] {len(rows)} rows read from eval_runs.", flush=True)
+
+    if args.include_run_ids:
+        keep = set(args.include_run_ids)
+        before = len(rows)
+        rows = [r for r in rows if r.get("run_id") in keep]
+        print(
+            f"[06_report] restricted to {len(rows)} row(s) by --include-run-ids "
+            f"({len(keep)} id(s) requested; {before} read).",
+            flush=True,
+        )
 
     if args.exclude_run_ids:
         excluded = set(args.exclude_run_ids)
