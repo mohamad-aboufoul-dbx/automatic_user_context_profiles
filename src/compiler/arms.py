@@ -12,9 +12,10 @@ _parse_utc helper to avoid duplicating age/recency logic.
 
 from __future__ import annotations
 
-# _parse_utc is internal to score.py but we own both modules; importing it
-# is the explicit requirement ("reuse score.py's recency/age helper").
-from compiler.score import select, _parse_utc
+# Import the shared sort-key helper and default tie-breaker constant so that
+# every arm honours the same cfg["tie_breaker"] override.  _parse_utc is
+# reused to avoid duplicating age/recency parsing logic.
+from compiler.score import select, _parse_utc, tie_break_key, _DEFAULT_TIE_BREAKER
 
 
 # ---------------------------------------------------------------------------
@@ -39,18 +40,14 @@ def _static_score(mem: dict, cfg: dict, now: str) -> float:
 def _static_sort_key(mem: dict, cfg: dict, now: str) -> tuple:
     """Sort key for static ranking: descending static score with tie-breakers.
 
-    Tie-breaker order is consistent with score.py's _DEFAULT_TIE_BREAKER:
-        1. confidence_desc
-        2. source_datetime_desc (newer first)
-        3. memory_id_asc
+    Delegates tie-breaking to score.tie_break_key() using the criteria list
+    from cfg.get("tie_breaker", _DEFAULT_TIE_BREAKER).  This ensures that
+    every arm honours the same cfg["tie_breaker"] override — satisfying the
+    "same config compiles every arm" invariant.
     """
     s = _static_score(mem, cfg, now)
-    return (
-        -s,
-        -mem["confidence"],
-        -_parse_utc(mem["source_datetime"]).timestamp(),
-        mem["memory_id"],
-    )
+    criteria = cfg.get("tie_breaker", _DEFAULT_TIE_BREAKER)
+    return tie_break_key(s, mem, criteria)
 
 
 def _rank_static(mems: list[dict], cfg: dict, now: str) -> list[dict]:

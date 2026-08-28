@@ -376,6 +376,77 @@ class TestPlacebo:
 
 
 # ---------------------------------------------------------------------------
+# cfg["tie_breaker"] invariant — static arms must honour the same override
+# ---------------------------------------------------------------------------
+
+class TestStaticArmTieBreaker:
+    """Static arms (static_generic, placebo) must honour cfg["tie_breaker"].
+
+    Regression guard for the "same config compiles every arm" invariant:
+    a cfg["tie_breaker"] override must affect static_generic/placebo exactly
+    as it affects retrieved (via select()).
+    """
+
+    # Construct two mems with mathematically identical primary static scores
+    # so that only the tie-breaker decides the winner:
+    #
+    #   old_high_conf: confidence=0.8, age=30 days (= halflife)
+    #       → recency_factor = 0.5^(30/30) = 0.5  → static_score = 0.4
+    #   new_low_conf:  confidence=0.4, age=0 days
+    #       → recency_factor = 0.5^(0/30)  = 1.0  → static_score = 0.4
+    #
+    # Default tie_breaker ["confidence_desc", ...]: old_high_conf (0.8) wins.
+    # Custom  tie_breaker ["source_datetime_desc", ...]: new_low_conf (newer) wins.
+
+    _NOW = "2026-08-17T00:00:00Z"
+    # 2026-08-17 minus 30 days = 2026-07-18
+    _BASE_CFG_TB = {
+        "score_weights": {"semantic": 0.75, "recency": 0.15, "confidence": 0.10},
+        "recency_halflife_days": 30,
+        "top_k": 10,
+        "token_budget": 10_000,
+    }
+    _MEMS = [
+        _make_mem("old_high_conf", [1.0, 0.0], 0.8, "2026-07-18T00:00:00Z", domain="domain_a"),
+        _make_mem("new_low_conf",  [1.0, 0.0], 0.4, "2026-08-17T00:00:00Z", domain="domain_b"),
+    ]
+    _TASK = {"goal_embedding": [1.0, 0.0], "repo_domain": REPO_DOMAIN}
+
+    def test_default_tie_breaker_confidence_desc_wins(self):
+        """With default tie_breaker, confidence_desc resolves: old_high_conf first."""
+        result = pool("static_generic", self._MEMS, self._TASK, self._BASE_CFG_TB, self._NOW)
+        assert result[0]["memory_id"] == "old_high_conf"
+
+    def test_custom_tie_breaker_source_datetime_desc_changes_winner(self):
+        """Non-default tie_breaker reorders static_generic outcome.
+
+        Swapping confidence_desc to second position lets source_datetime_desc
+        fire first, so the newer mem (new_low_conf) wins despite lower confidence.
+        This locks the invariant: arms.py reads cfg["tie_breaker"] via the
+        shared tie_break_key() helper rather than hard-coding the default order.
+        """
+        custom_cfg = {
+            **self._BASE_CFG_TB,
+            "tie_breaker": ["source_datetime_desc", "confidence_desc", "memory_id_asc"],
+        }
+        result = pool("static_generic", self._MEMS, self._TASK, custom_cfg, self._NOW)
+        assert result[0]["memory_id"] == "new_low_conf"
+
+    def test_placebo_also_honors_custom_tie_breaker(self):
+        """placebo (which uses the same _rank_static) also flips under the custom cfg."""
+        # Add a repo_domain mem so placebo has something to filter; it will be excluded.
+        mems_with_repo = self._MEMS + [
+            _make_mem("repo_mem", [1.0, 0.0], 0.99, "2026-08-17T00:00:00Z", domain=REPO_DOMAIN),
+        ]
+        custom_cfg = {
+            **self._BASE_CFG_TB,
+            "tie_breaker": ["source_datetime_desc", "confidence_desc", "memory_id_asc"],
+        }
+        result = pool("placebo", mems_with_repo, self._TASK, custom_cfg, self._NOW)
+        assert result[0]["memory_id"] == "new_low_conf"
+
+
+# ---------------------------------------------------------------------------
 # arm: unknown
 # ---------------------------------------------------------------------------
 

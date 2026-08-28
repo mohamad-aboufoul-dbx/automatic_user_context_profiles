@@ -60,6 +60,41 @@ _DEFAULT_TIE_BREAKER: list[str] = [
 ]
 
 
+def tie_break_key(primary: float, mem: dict, criteria: list[str]) -> tuple:
+    """Return a sort key for a memory record that honours an ordered criteria list.
+
+    The first element is ``-primary`` so that sorting ascending yields descending
+    primary score.  Each criterion in *criteria* appends one element:
+
+        "confidence_desc"       → ``-mem["confidence"]``        (higher wins)
+        "source_datetime_desc"  → ``-epoch_seconds``            (newer wins)
+        "memory_id_asc"         → ``mem["memory_id"]``          (smaller wins)
+
+    Unrecognised criteria strings are silently skipped to allow forward
+    compatibility.
+
+    Args:
+        primary: The primary score for this record (higher = better).
+        mem:     Memory record dict (must contain ``confidence``,
+                 ``source_datetime``, and ``memory_id`` keys).
+        criteria: Ordered list of criterion strings to use as tie-breakers.
+
+    Returns:
+        A tuple suitable for use as the ``key=`` argument to ``sorted`` /
+        ``list.sort`` — smaller tuples will be ranked first (i.e. better).
+    """
+    keys: list = [-primary]
+    for criterion in criteria:
+        if criterion == "confidence_desc":
+            keys.append(-mem["confidence"])
+        elif criterion == "source_datetime_desc":
+            # Negate epoch seconds so that a larger (newer) timestamp sorts first.
+            keys.append(-_parse_utc(mem["source_datetime"]).timestamp())
+        elif criterion == "memory_id_asc":
+            keys.append(mem["memory_id"])
+    return tuple(keys)
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -145,20 +180,7 @@ def select(
         (score(query_vec, m, cfg, now), m) for m in mems
     ]
 
-    def sort_key(item: tuple[float, dict]):
-        s, m = item
-        keys: list = [-s]  # primary: score descending
-        for criterion in tie_breaker:
-            if criterion == "confidence_desc":
-                keys.append(-m["confidence"])
-            elif criterion == "source_datetime_desc":
-                # negate epoch seconds so larger (newer) comes first
-                keys.append(-_parse_utc(m["source_datetime"]).timestamp())
-            elif criterion == "memory_id_asc":
-                keys.append(m["memory_id"])
-        return tuple(keys)
-
-    scored.sort(key=sort_key)
+    scored.sort(key=lambda item: tie_break_key(item[0], item[1], tie_breaker))
 
     selected: list[dict] = []
     cumulative_tokens = 0
