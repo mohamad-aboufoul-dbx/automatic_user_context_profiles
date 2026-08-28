@@ -261,7 +261,24 @@ assistant response unless the user accepted it OR code/tests/tool-output confirm
 RULES: atomic & self-contained (no pronouns without referent); tool-neutral language;
 preserve concrete paths/commands/test names/ticket IDs/branches; don't infer a stable
 preference from one weak example; evidence must quote/paraphrase the transcript with
-its chat_step; return {"memories":[]} if nothing durable. Do not summarize."""
+its chat_step; return {"memories":[]} if nothing durable. Do not summarize.
+
+OUTPUT SCHEMA: Return ONLY a JSON object of the form {"memories": [ ... ]} with at most
+20 items (return {"memories":[]} if nothing durable). Each item MUST be an object with
+EXACTLY these five keys — use these exact key names, do NOT use type/key/value/tags:
+  - "memory_text": string, 15–500 characters, atomic and self-contained.
+  - "memory_type": exactly one of user_preference, workflow_preference, repository_fact,
+    architecture_decision, command_or_environment, failure_and_fix, code_convention,
+    project_state.
+  - "domain": a short string — use "repo:<name>" when the memory is about a specific
+    repository (e.g. "repo:platform"), otherwise "general_workflow".
+  - "evidence": a short quote/paraphrase from the transcript that INCLUDES the chat_step
+    (e.g. "chat_step 2: USER asked ...").
+  - "confidence": a number between 0.0 and 1.0.
+Every item MUST include all five keys.
+
+EXAMPLE item:
+{"memory_text": "Abdullah works on class-agnostic object detection for IR/thermal imagery and wants bounding boxes for high-objectness regions without classification.", "memory_type": "project_state", "domain": "general_workflow", "evidence": "chat_step 2: USER asked about pretrained models like OWLv2 for IR data, class-agnostic detections", "confidence": 0.9}"""
 
 USER_PROMPT_TEMPLATE = """username={{username}} conversation_id={{conversation_id}} tool={{source_tool}}
 started={{started_at}} ended={{ended_at}}
