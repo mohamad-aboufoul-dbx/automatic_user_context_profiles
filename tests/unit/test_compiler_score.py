@@ -141,23 +141,42 @@ def test_select_token_budget_cap():
 
 
 def test_select_tie_breaker_confidence_desc():
-    """When scores are equal, higher confidence wins."""
-    # Force identical scores by using identical embeddings, same datetime
+    """Tie-breaker: higher confidence wins when primary scores are truly tied.
+
+    Construction: set confidence weight to 0 so confidence doesn't feed into the
+    primary score; use identical embeddings and source_datetime so all other score
+    components are equal.  Primary scores are exactly equal → confidence_desc
+    tie-breaker is the deciding factor.
+    """
+    cfg = {
+        **BASE_CFG,
+        "score_weights": {"semantic": 0.75, "recency": 0.15, "confidence": 0.0},
+    }
     mems = [
         _make_mem("low_conf",  [1.0, 0.0], 0.3, "2026-08-01T00:00:00Z"),
         _make_mem("high_conf", [1.0, 0.0], 0.9, "2026-08-01T00:00:00Z"),
     ]
-    result = select(mems, [1.0, 0.0], BASE_CFG, "2026-08-17T00:00:00Z")
+    result = select(mems, [1.0, 0.0], cfg, "2026-08-17T00:00:00Z")
     assert result[0]["memory_id"] == "high_conf"
 
 
 def test_select_tie_breaker_source_datetime_desc():
-    """When confidence is also tied, newer source_datetime wins."""
+    """Tie-breaker: newer source_datetime wins when scores and confidence are tied.
+
+    Construction: set recency weight to 0 so source_datetime doesn't feed into the
+    primary score; use identical embeddings and confidence so all other score
+    components are equal.  Primary scores are exactly equal, confidence_desc sees
+    equal confidence → source_datetime_desc is the deciding factor.
+    """
+    cfg = {
+        **BASE_CFG,
+        "score_weights": {"semantic": 0.75, "recency": 0.0, "confidence": 0.10},
+    }
     mems = [
         _make_mem("older", [1.0, 0.0], 0.5, "2026-07-01T00:00:00Z"),
         _make_mem("newer", [1.0, 0.0], 0.5, "2026-08-01T00:00:00Z"),
     ]
-    result = select(mems, [1.0, 0.0], BASE_CFG, "2026-08-17T00:00:00Z")
+    result = select(mems, [1.0, 0.0], cfg, "2026-08-17T00:00:00Z")
     assert result[0]["memory_id"] == "newer"
 
 
@@ -168,6 +187,25 @@ def test_select_tie_breaker_memory_id_asc():
         _make_mem("a_id", [1.0, 0.0], 0.5, "2026-08-01T00:00:00Z"),
     ]
     result = select(mems, [1.0, 0.0], BASE_CFG, "2026-08-17T00:00:00Z")
+    assert result[0]["memory_id"] == "a_id"
+
+
+def test_select_default_tie_breaker_without_cfg_key():
+    """select() uses _DEFAULT_TIE_BREAKER when 'tie_breaker' is absent from cfg.
+
+    Verifies the mandated default ["confidence_desc","source_datetime_desc","memory_id_asc"]
+    is applied rather than an empty list.  With an empty list, Python's stable sort
+    would preserve input order (z_id first) — the assertion would fail, catching
+    any regression to cfg.get("tie_breaker", []).
+    """
+    cfg_no_tb = {k: v for k, v in BASE_CFG.items() if k != "tie_breaker"}
+    # All score components equal → primary score tied → default tie-breaker fires
+    mems = [
+        _make_mem("z_id", [1.0, 0.0], 0.5, "2026-08-01T00:00:00Z"),
+        _make_mem("a_id", [1.0, 0.0], 0.5, "2026-08-01T00:00:00Z"),
+    ]
+    result = select(mems, [1.0, 0.0], cfg_no_tb, "2026-08-17T00:00:00Z")
+    # memory_id_asc (last in default) resolves the tie: "a_id" < "z_id"
     assert result[0]["memory_id"] == "a_id"
 
 

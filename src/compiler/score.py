@@ -52,6 +52,14 @@ def _parse_utc(ts: str) -> datetime:
     return dt
 
 
+# Spec-mandated tie-breaker order; used when cfg omits the "tie_breaker" key.
+_DEFAULT_TIE_BREAKER: list[str] = [
+    "confidence_desc",
+    "source_datetime_desc",
+    "memory_id_asc",
+]
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -130,7 +138,7 @@ def select(
 
     top_k = cfg["top_k"]
     token_budget = cfg["token_budget"]
-    tie_breaker: list[str] = cfg.get("tie_breaker", [])
+    tie_breaker: list[str] = cfg.get("tie_breaker", _DEFAULT_TIE_BREAKER)
 
     # Compute scores once
     scored: list[tuple[float, dict]] = [
@@ -160,6 +168,8 @@ def select(
             break
         tokens = mem.get("token_count", 0)
         if cumulative_tokens + tokens > token_budget:
+            # Greedy rank-ordered fill: stop at the first item that would exceed
+            # the budget; no backfill of smaller items that might still fit.
             break
         selected.append(mem)
         cumulative_tokens += tokens
