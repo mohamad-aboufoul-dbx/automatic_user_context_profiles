@@ -1683,3 +1683,272 @@ class TestT1OracleKeyAbsent:
         assert worktree_snapshot["oracle_during_run"] is False, (
             "Oracle must not be present during agent run (contamination invariant)"
         )
+
+
+# ---------------------------------------------------------------------------
+# Tests: Fix 1 — mkdir before cp in upload_to_volume
+# ---------------------------------------------------------------------------
+
+class TestUploadToVolumeMkdir:
+    """Verify upload_to_volume issues mkdir before cp (Fix 1)."""
+
+    def test_mkdir_called_before_cp(self):
+        """mkdir must be issued for the parent dir before cp is called.
+
+        CLI command structure: ["databricks", "fs", <subcmd>, <arg>, ...]
+        so the subcmd is at index 2.
+        """
+        from harness.run import upload_to_volume
+        import tempfile
+
+        commands_issued = []
+
+        def fake_run(cmd, *, check=False, capture_output=False):
+            commands_issued.append(list(cmd))
+
+            class FakeResult:
+                returncode = 0
+                stdout = b""
+                stderr = b""
+
+            return FakeResult()
+
+        with tempfile.NamedTemporaryFile(suffix=".jsonl", delete=False) as f:
+            f.write(b"test content\n")
+            local = f.name
+
+        try:
+            with patch("harness.run.subprocess.run", side_effect=fake_run):
+                upload_to_volume(
+                    local,
+                    "/Volumes/cat/sch/vol/raw/eval_runs/run-abc/transcript.jsonl",
+                    "hackathon",
+                )
+        finally:
+            os.unlink(local)
+
+        # subcommand is at index 2: ["databricks", "fs", <subcmd>, ...]
+        subcmds = [cmd[2] for cmd in commands_issued if len(cmd) > 2]
+        assert "mkdir" in subcmds, f"mkdir must be issued; got subcmds={subcmds}"
+        assert "cp" in subcmds, f"cp must be issued; got subcmds={subcmds}"
+        # mkdir must come first
+        assert subcmds.index("mkdir") < subcmds.index("cp"), (
+            "mkdir must precede cp"
+        )
+
+    def test_mkdir_targets_parent_dir(self):
+        """mkdir target must be the parent directory, not the file path.
+
+        CLI command: ["databricks", "fs", "mkdir", <dir>, "--profile", <profile>]
+        so the dir argument is at index 3.
+        """
+        from harness.run import upload_to_volume
+        import tempfile
+
+        mkdir_targets = []
+
+        def fake_run(cmd, *, check=False, capture_output=False):
+            if len(cmd) > 2 and cmd[2] == "mkdir":
+                mkdir_targets.append(cmd[3])  # the dir argument at index 3
+
+            class FakeResult:
+                returncode = 0
+
+            return FakeResult()
+
+        with tempfile.NamedTemporaryFile(suffix=".diff", delete=False) as f:
+            f.write(b"diff content\n")
+            local = f.name
+
+        try:
+            with patch("harness.run.subprocess.run", side_effect=fake_run):
+                upload_to_volume(
+                    local,
+                    "/Volumes/cat/sch/vol/raw/eval_runs/run-xyz/final.diff",
+                    "hackathon",
+                )
+        finally:
+            os.unlink(local)
+
+        assert len(mkdir_targets) == 1
+        assert mkdir_targets[0] == "dbfs:/Volumes/cat/sch/vol/raw/eval_runs/run-xyz", (
+            f"mkdir should target the parent dir, got: {mkdir_targets[0]}"
+        )
+
+    def test_upload_run_artifacts_mkdir_called_per_upload(
+        self, fake_git_repo, canned_artifact, canned_task_def
+    ):
+        """_upload_run_artifacts triggers mkdir when the concrete upload_fn calls it."""
+        platform_repo, _ = fake_git_repo
+        sentinel = canned_artifact["sentinel"]
+
+        mkdir_calls = []
+        cp_calls = []
+
+        def recording_upload(local, vol, profile):
+            # Simulate what upload_to_volume does (mkdir then cp) — this is a
+            # standalone stub that records calls to verify ordering at the run level.
+            import posixpath
+            parent = posixpath.dirname(vol)
+            mkdir_calls.append(parent)
+            cp_calls.append(vol)
+
+        def stub_agent(worktree, prompt, model, *, max_minutes, max_tool_calls):
+            return _make_agent_result(sentinel=sentinel)
+
+        run_one(
+            task_def=canned_task_def,
+            arm="retrieved",
+            repeat=1,
+            artifact=canned_artifact,
+            platform_repo=platform_repo,
+            run_agent_fn=stub_agent,
+            write_row_fn=_noop_write,
+            upload_fn=recording_upload,
+        )
+
+        # Both transcript and diff were uploaded
+        assert len(cp_calls) == 2
+        transcript_uploads = [v for v in cp_calls if v.endswith("transcript.jsonl")]
+        diff_uploads = [v for v in cp_calls if v.endswith("final.diff")]
+        assert len(transcript_uploads) == 1
+        assert len(diff_uploads) == 1
+
+        # Parent dir recorded for both uploads (proves mkdir-before-cp contract
+        # is applied at the upload_fn level)
+        assert len(mkdir_calls) == 2
+        for parent in mkdir_calls:
+            # Parent should be the run_id directory, not the file itself
+            assert not parent.endswith(".jsonl")
+            assert not parent.endswith(".diff")
+
+
+# ---------------------------------------------------------------------------
+# Tests: Fix 2 — SENTINEL_ACK_PREAMBLE wraps goal_prompt uniformly
+# ---------------------------------------------------------------------------
+
+class TestSentinelAckPreamble:
+    """Verify the effective_prompt passed to run_agent contains the preamble
+    + original goal_prompt, and that the sentinel value is NOT embedded
+    in the preamble constant (Fix 2)."""
+
+    def test_effective_prompt_contains_preamble_and_goal(
+        self, fake_git_repo, canned_artifact, canned_task_def
+    ):
+        """run_agent receives preamble + original goal_prompt concatenated."""
+        from harness.run import SENTINEL_ACK_PREAMBLE
+        platform_repo, _ = fake_git_repo
+        sentinel = canned_artifact["sentinel"]
+        original_goal = canned_task_def["goal_prompt"]
+
+        prompts_seen = []
+
+        def recording_agent(worktree, prompt, model, *, max_minutes, max_tool_calls):
+            prompts_seen.append(prompt)
+            return _make_agent_result(sentinel=sentinel)
+
+        run_one(
+            task_def=canned_task_def,
+            arm="retrieved",
+            repeat=1,
+            artifact=canned_artifact,
+            platform_repo=platform_repo,
+            run_agent_fn=recording_agent,
+            write_row_fn=_noop_write,
+            upload_fn=_noop_upload,
+        )
+
+        assert len(prompts_seen) == 1
+        effective = prompts_seen[0]
+
+        # Must contain the preamble
+        assert SENTINEL_ACK_PREAMBLE in effective, (
+            "Preamble must be prepended to the effective_prompt"
+        )
+        # Must contain the original goal_prompt (unchanged)
+        assert original_goal in effective, (
+            "Original goal_prompt must appear verbatim in the effective_prompt"
+        )
+        # Preamble must come BEFORE goal
+        assert effective.index(SENTINEL_ACK_PREAMBLE) < effective.index(original_goal), (
+            "Preamble must precede goal_prompt"
+        )
+
+    def test_preamble_does_not_embed_sentinel_value(
+        self, fake_git_repo, canned_artifact, canned_task_def
+    ):
+        """The SENTINEL_ACK_PREAMBLE constant must not contain the sentinel value.
+
+        The agent must read the sentinel from MEMORY.md, not from the prompt.
+        """
+        from harness.run import SENTINEL_ACK_PREAMBLE
+        sentinel_value = canned_artifact["sentinel"]  # e.g. "mem-T1-retrieved-abc123"
+
+        assert sentinel_value not in SENTINEL_ACK_PREAMBLE, (
+            f"Preamble must NOT embed the sentinel value {sentinel_value!r}; "
+            "the agent must read it from MEMORY.md"
+        )
+
+    def test_preamble_applied_to_all_arms(
+        self, fake_git_repo, canned_artifact, canned_task_def, tmp_path
+    ):
+        """SENTINEL_ACK_PREAMBLE is applied to every arm (empty/retrieved/placebo)."""
+        from harness.run import SENTINEL_ACK_PREAMBLE
+        platform_repo, starting_commit = fake_git_repo
+        sentinel = canned_artifact["sentinel"]
+        original_goal = canned_task_def["goal_prompt"]
+
+        # Build a multi-arm artifact map and tasks dir
+        tasks_dir = tmp_path / "tasks"
+        tasks_dir.mkdir()
+        task_def = {**canned_task_def}
+        (tasks_dir / f"{task_def['task_id']}.json").write_text(json.dumps(task_def))
+
+        arms_to_test = ["empty", "retrieved", "placebo"]
+        artifacts = {
+            (task_def["task_id"], arm): {**canned_artifact, "arm": arm}
+            for arm in arms_to_test
+        }
+
+        prompts_by_arm: dict[str, str] = {}
+
+        def recording_agent(worktree, prompt, model, *, max_minutes, max_tool_calls):
+            # Identify arm from volume path in artifact (via MEMORY.md sentinel — all same here)
+            prompts_by_arm[len(prompts_by_arm)] = prompt
+            return _make_agent_result(sentinel=sentinel)
+
+        run_matrix(
+            task_ids=[task_def["task_id"]],
+            arms=arms_to_test,
+            repeats=1,
+            eval_tasks_dir=str(tasks_dir),
+            platform_repo=platform_repo,
+            artifacts_override=artifacts,
+            run_agent_fn=recording_agent,
+            write_row_fn=_noop_write,
+            upload_fn=_noop_upload,
+        )
+
+        assert len(prompts_by_arm) == len(arms_to_test), (
+            f"Expected {len(arms_to_test)} agent calls, got {len(prompts_by_arm)}"
+        )
+        for idx, prompt in prompts_by_arm.items():
+            assert SENTINEL_ACK_PREAMBLE in prompt, (
+                f"Arm call #{idx}: preamble missing from effective_prompt"
+            )
+            assert original_goal in prompt, (
+                f"Arm call #{idx}: original goal missing from effective_prompt"
+            )
+
+    def test_preamble_constant_instructs_read_from_file(self):
+        """Preamble must instruct agent to READ from MEMORY.md, not from the prompt."""
+        from harness.run import SENTINEL_ACK_PREAMBLE
+        # Must reference MEMORY.md by name
+        assert "MEMORY.md" in SENTINEL_ACK_PREAMBLE, (
+            "Preamble must tell the agent to read from MEMORY.md"
+        )
+        # Must not contain any sentinel-like pattern (mem- prefix)
+        import re
+        assert not re.search(r'\bmem-[a-z0-9]', SENTINEL_ACK_PREAMBLE), (
+            "Preamble must not embed a mem-... sentinel value"
+        )

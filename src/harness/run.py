@@ -66,6 +66,23 @@ DEFAULT_MODEL = "databricks-claude-sonnet-4-5"
 T1_ORACLE_COMMIT = "98b8bd7"
 T1_ORACLE_FIXTURE_PATH = "tests/unit/test_image_selection_auto_k.py"
 
+# Sentinel-acknowledgment preamble prepended to every goal_prompt at launch time.
+#
+# Design constraints (all must hold):
+#   (a) DOES NOT embed the sentinel value — the agent reads it from MEMORY.md,
+#       so echoing it proves ingestion, not just prompt-echoing.
+#   (b) Applied IDENTICALLY to ALL arms (empty / static_generic / retrieved /
+#       placebo), keeping the comparison fair.
+#   (c) Harness-only wrapper — frozen eval/tasks/*.json files are never modified.
+#   (d) Works for the empty arm too (its MEMORY.md still carries a sentinel).
+SENTINEL_ACK_PREAMBLE = (
+    "Before you begin, read the MEMORY.md file in your working directory "
+    "and echo its memory-version sentinel (the `mem-...` value in the "
+    "MEMORY_SENTINEL comment or 'acknowledge memory version' line) on its "
+    "own line in your first response. "
+    "Then complete the following task:\n\n"
+)
+
 
 # ---------------------------------------------------------------------------
 # stream-json field paths (EMPIRICAL — localized here for easy 5.3 update)
@@ -506,10 +523,20 @@ def upload_to_volume(local_path: str, volume_path: str, profile: str) -> None:
     """Upload a local file to the UC Volume via ``databricks fs cp``.
 
     volume_path must be an absolute /Volumes/... path.
-    The CLI handles the dbfs: prefix automatically for Volume paths.
+
+    ``fs cp`` does NOT auto-create nested Volume directories, so we run
+    ``fs mkdir`` on the parent dir first (idempotent; safe to call when
+    the directory already exists).
     """
     dbfs_path = (
         f"dbfs:{volume_path}" if not volume_path.startswith("dbfs:") else volume_path
+    )
+    # Derive the parent directory (e.g. .../eval_runs/{run_id})
+    dbfs_parent = dbfs_path.rsplit("/", 1)[0]
+    subprocess.run(
+        ["databricks", "fs", "mkdir", dbfs_parent, "--profile", profile],
+        check=True,
+        capture_output=True,
     )
     subprocess.run(
         ["databricks", "fs", "cp", local_path, dbfs_path, "--profile", profile],
@@ -871,9 +898,14 @@ def run_one(
             return row
 
         # ── Step 4: run the agent ───────────────────────────────────────────
+        # Wrap goal_prompt with the uniform sentinel-acknowledgment preamble so
+        # the agent reads and echoes the sentinel from MEMORY.md (proving ingestion).
+        # SENTINEL_ACK_PREAMBLE is applied identically to ALL arms and does NOT
+        # embed the sentinel value (that must come from the agent reading the file).
+        effective_prompt = SENTINEL_ACK_PREAMBLE + goal_prompt
         agent_result = _run_agent(
             worktree_path,
-            goal_prompt,
+            effective_prompt,
             model,
             max_minutes=max_minutes,
             max_tool_calls=max_tool_calls,
