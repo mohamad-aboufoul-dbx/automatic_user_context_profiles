@@ -1,0 +1,91 @@
+{
+  "_note": "Complete feature-cluster exclusion set from heldout-approval-packet.md §4. The temporal cutoff (2026-08-17T00:00Z) already excludes the entire UES4 program; these IDs are belt-and-suspenders.",
+  "T1_cluster": {
+    "description": "UES4 auto-k k-means module — impl + review-fix (Aug 21) and integration follow-ups (Aug 22)",
+    "conversation_ids": [
+      "d8d5b84d-1ddb-4c04-952a-3d071d5223c6",
+      "06147d1c-537a-4ac7-b210-43c5909ad7b3",
+      "15616d81-e31e-432c-b395-859f97a3689f",
+      "dae9f10f595fa51d68fe2556650beaa5:01a02a0a-8070-7ea1-8922-4fec7ba064c4",
+      "5820684a17ad6bcf7f2f4ee64e1d3af6:01a02a22-149d-7b83-879f-9196f3152b26",
+      "69f7003b5e22741eb3b16e0058e616d9:01a02a2d-3d12-7a41-9fa1-7d2dcec54a46",
+      "bee6864a22c159642d8f901c3a5dcf26:01a02a36-6d3f-7943-9a58-9f8daaaa772c",
+      "54f431ab72467f86a135c53990eff9db:01a02675-5e98-7a41-8009-334f4c44144e",
+      "36b9bfa3bea3c26a7c073a40dfc906ed:01a02675-c9ee-7972-91b6-5e4359f908cc",
+      "233a6c24ac0b59bb00b91748635817ea:01a02683-9626-78f0-8d78-914c15771e8f"
+    ]
+  },
+  "T2_cluster": {
+    "description": "UES4 HDBSCAN near-duplicate / exemplar diagnostics spike (Aug 21) plus HDBSCAN-touching convs",
+    "conversation_ids": [
+      "3b41f7ea-1a52-4b31-b27b-e1e9cb1d1a34",
+      "6e4b3402-ee42-4569-b525-3aa4e63c4a82",
+      "b0f6dbce-5533-4838-8b84-34ec7b3ecd42"
+    ]
+  },
+  "T3_cluster": {
+    "description": "UES4 candidate-blocking + threshold-graph clustering spike (Aug 20) and Aug-17→19 design convs",
+    "conversation_ids": [
+      "c7b01e88-4076-4997-984a-5ec488d6b942",
+      "d7537515-d25c-4ad5-9cc7-d9fd979245b7",
+      "cdef3eb6-12fd-42f5-98fb-34139a6d3195",
+      "97e19ff4-b4ae-43c1-8adb-54b72a266deb",
+      "137d36c8-f4cb-4a3f-b594-b116295c627c",
+      "ac12bd5c-5c9c-44bc-abfe-8e6cbcef343a",
+      "b7b22d8e-500b-4306-8989-da307f2a5589",
+      "4fc7d653-61c8-4f98-81b0-df7cbbde9ce2",
+      "477e1874-31cf-4b8d-b848-dca9f9e025a0",
+      "8b3edc4b-61e2-4b85-90d5-d14c93657a69",
+      "01a011d0",
+      "01a01216",
+      "01a015eb",
+      "01a015f7",
+      "01a01acb",
+      "01a01b29",
+      "01a01b6f",
+      "01a01b75",
+      "01a01b79",
+      "01a01f70",
+      "01a01f77"
+    ]
+  },
+  "shared_ues4_program": {
+    "description": "SigLIP2 embedding-clustering sibling, design megasession, multi-feature launch convs, and Aug 22–24 integration/UES8/UES9/UES10 tail — excluded for all three tasks",
+    "conversation_ids": [
+      "486c522b-61b0-425e-8669-280abfa203f3",
+      "81189d5",
+      "07a9305a-0cb7-4771-b89e-f4feacaf54a5",
+      "bbd3d128-f358-4443-876e-7fe1ba05fa6f",
+      "6e011c33-d931-40ec-ade4-7187de13c89b",
+      "566160042386163e0487a4f2eb89ee33:01a02493-3aef-73b0-829b-74bd66312159",
+      "38d34d89605850d9ab2234f0ba5f2491:01a02572-4589-7801-8130-53884098d797",
+      "07f02c964a878113c6e0d1c9bd41cb17:01a025a6-09b4-7890-a545-45a5b0ddd4ed",
+      "84fb0195dcbf338dbbdb608525707b0a:01a02623-3b09-7503-b18f-3862ae8b7598",
+      "c6ca284a-71b5-4dde-9759-215766a91621",
+      "89e3cdc8-cd89-4560-ba71-0f56e790c28c",
+      "b25b2da6-33f6-4921-8c16-0cdd6abc2f4a",
+      "6ee20497-3ca7-4f7b-9a0e-903df3fbe27d",
+      "55e02aa4-13d4-4dd0-9ef8-5fe841f13db3",
+      "28339a95c484d401e459604482f98b77:01a03043-c09b-7e72-86f3-07492fd25ba9",
+      "461ad2438292f73699231716bca63a65:01a034c2-f757-7622-867b-a77493955245",
+      "ae48ddb4f91d6af4f8b1732dfca854ae:01a034c5-3e20-72f1-ba4d-6570da5ef8cd",
+      "02214c3c14642f531d99a3e320e3c998:01a02f42-0ec4-7b21-bacf-a22b8372a73f",
+      "9ddd02bf5dcdf208a63107a6c0d17914:01a02f4e-44fe-78a1-af7e-5af634b5c0db",
+      "871507b6bf277acc1bb14319a821046c:01a02faa-4224-7f32-9165-ae4a61ce1b8b",
+      "5eed8adc-4a95-419b-a67f-3ab24a57bb37",
+      "4e556a8c-90a6-4cf8-be07-b8fe8ab6c363",
+      "da98fe986627d8faad3d41a8fa240ff9:01a033f5-228f-72a2-ae3d-4ed440ed304f",
+      "01a03458-5de4-77b3-a12d-248357c603a0"
+    ]
+  },
+  "precutoff_2025_review": {
+    "description": "2025 pre-cutoff convs that mention hdbscan / k-means / blocking in unrelated contexts — retained by cutoff but flagged for eyeballing before extraction (packet §8)",
+    "conversation_ids": [
+      "02c8e44d-07fc-42a4-8e80-1ec134a9ea3e",
+      "118657a0-0aac-436b-b5a5-427cf429224e",
+      "01f8b7a6-2c37-4945-84fd-d5e952fcf0d5",
+      "11d98f6d-9c40-4053-828d-308b7ae2dae4",
+      "11dd3914-74e4-43d2-b7f5-d3ce44e5992c"
+    ]
+  }
+}
