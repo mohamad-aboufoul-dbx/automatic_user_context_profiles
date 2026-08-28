@@ -79,6 +79,15 @@ WORKSPACE_PATH="/Users/$ME/hackathon_auto_profiles"
 # ---------------------------------------------------------------------------
 echo "[1] Staging guard modules + config to the UC Volume..."
 
+# `databricks fs cp` does NOT auto-create nested Volume subdirectories, so make
+# the target dirs first. `fs mkdir` creates every dir along the path and is a
+# no-op on an existing dir (idempotent / re-runnable).
+for d in "$EXTRACT_SRC_DEST" "$CONFIG_DEST"; do
+    databricks fs mkdir "$d" --profile "$PROFILE" \
+      || die "Failed to create Volume directory $d"
+    echo "    Ensured dir: $d"
+done
+
 # Guard package: stage EVERY src/extract/*.py so `import extract.*` resolves.
 # The notebook adds the PARENT (.../raw/extract_src) to sys.path and imports
 # extract.prefilter / extract.schema / extract.ids.
