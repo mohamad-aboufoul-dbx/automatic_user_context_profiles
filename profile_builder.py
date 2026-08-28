@@ -3,12 +3,17 @@
 # [tool.databricks.environment]
 # environment_version = "5"
 # ///
-# DBTITLE 1,Configuration
+# DBTITLE 1,Configuration (YAML-driven)
 # Automatic User Context Profile Builder
 # =========================================
 # ITERATIVE ARCHITECTURE: Profiles are built incrementally, processing one
 # piece of evidence at a time in chronological order. This preserves temporal
 # signal ("asked about X once" ≠ "expert in X") and avoids batch-inference errors.
+#
+# CONFIGURATION:
+#   Set CONFIG_PATH below to point to a user YAML config file in configs/.
+#   Each user creates their own YAML (e.g., configs/mohamad_aboufoul.yaml).
+#   See configs/ folder for the template and examples.
 #
 # DATA SOURCE COMBINATIONS:
 #   A: Cold-start only (career ladder) → initial profile set
@@ -20,75 +25,130 @@
 #   Level 1 - Compact Runtime: Communication prefs, active threads, expertise
 #   Level 2 - Detailed Engagement: Project threads, capability model, growth
 #   Level 3 - Evidence Records: Atomic observations with provenance
-#
-# Processing flow:
-#   Career ladder → L0-L3 (cold-start)
-#   For each conversation (chronological): update L1-L3
-#   For each document chunk (chronological): update L1-L3
-#
-# Current date: August 27, 2026
 
-# --- Configuration ---
-CATALOG = "ai_fde_hackathon_catalog"
-SCHEMA = "automatic_user_context_profiles"
-CHAT_TABLE = f"{CATALOG}.{SCHEMA}.chatbot_conversations_mohamad"
-COLD_START_PATH = f"/Volumes/{CATALOG}/{SCHEMA}/cold_start_context_documents/"
-ADDITIONAL_DOCS_PATH = f"/Volumes/{CATALOG}/{SCHEMA}/chat_additional_context_documents/"
+import yaml
+from datetime import date
 
+# =============================================================================
+# SET YOUR CONFIG PATH HERE (or pass via notebook widget)
+# =============================================================================
+CONFIG_PATH = "/Workspace/Users/mohamad.aboufoul@databricks.com/automatic_user_context_profiles/configs/mohamad_aboufoul.yaml"
+
+# --- Load configuration from YAML ---
+with open(CONFIG_PATH, "r") as f:
+    config = yaml.safe_load(f)
+
+# --- Derived configuration variables ---
 # User identity
-USER_NAME = "Mohamad Aboufoul"
-USER_TITLE = "Senior AI FDE"
-USER_TENURE = "March 2024 - present"
-USER_LEVEL = "L5"  # Senior AI Engineer
-CURRENT_DATE = "2026-08-27"
+USER_NAME = config["user"]["name"]
+USER_TITLE = config["user"]["title"]
+USER_LEVEL = config["user"]["level"]
+USER_TENURE = config["user"]["tenure"]
+USER_TEAM = config["user"]["team"]
 
-# Model configuration
-# Using Opus 4.8 for iterative profile updates — needs nuanced judgment to
-# distinguish "asking about X" from "working on X" from "expert in X"
-# (Opus 5 and Sonnet 5 are not yet available via ai_query batch inference)
-DEFAULT_MODEL = "databricks-claude-opus-4-8"
+# Data locations
+CATALOG = config["data"]["catalog"]
+SCHEMA = config["data"]["schema"]
+CHAT_TABLE = f"{CATALOG}.{SCHEMA}.{config['data']['chat_table']}"
+COLD_START_PATH = config["data"]["cold_start_volume"]
+CAREER_LADDER_FILE = config["data"]["career_ladder_file"]
+ADDITIONAL_DOCS_PATH = config["data"]["additional_docs_volume"]
 
-print(f"Config loaded. Target: {CHAT_TABLE}")
+# Career ladder level mapping
+LEVEL_COLUMNS = config["career_ladder"]["level_columns"]
+CAREER_LADDER_CUMULATIVE = config["career_ladder"].get("cumulative", True)
+
+# Model
+DEFAULT_MODEL = config["model"]["name"]
+
+# Processing options
+CHUNK_SIZE = config["options"].get("chunk_size", 40000)
+MAX_RESPONSE_LENGTH = config["options"].get("max_response_length", 1500)
+
+# Runtime
+CURRENT_DATE = str(date.today())
+
+# Checkpoint table (shared across all users)
+CHECKPOINT_TABLE = f"{CATALOG}.{SCHEMA}.profile_checkpoints_v2"
+
+print(f"Config loaded from: {CONFIG_PATH}")
 print(f"User: {USER_NAME} | {USER_TITLE} (Level {USER_LEVEL})")
+print(f"Chat table: {CHAT_TABLE}")
+print(f"Cold-start: {COLD_START_PATH}{CAREER_LADDER_FILE}")
+print(f"Additional docs: {ADDITIONAL_DOCS_PATH}")
 print(f"Model: {DEFAULT_MODEL}")
-print(f"Architecture: Iterative (chronological evidence processing)")
+print(f"Level column: {LEVEL_COLUMNS.get(USER_LEVEL, 'NOT FOUND')}")
+print(f"Chunk size: {CHUNK_SIZE:,} chars")
 print(f"Current date: {CURRENT_DATE}")
+print(f"Architecture: Iterative (chronological evidence processing)")
 
 # COMMAND ----------
 
 # DBTITLE 1,Step 1: Extract Cold-Start Data (Career Ladder)
-# Extract and format the career ladder for the user's level (L5 = Sr. AI Engineer)
+# Extract and format the career ladder for the configured user level.
+# Supports any level defined in the config's career_ladder.level_columns mapping.
 
 cold_start_df = spark.sql(f"""
   SELECT * FROM read_files(
-    '{COLD_START_PATH}AI FDE Career Ladder (go_aifde_ladders).xlsx',
+    '{COLD_START_PATH}{CAREER_LADDER_FILE}',
     format => 'excel',
     headerRows => 1
   )
 """)
 
-# Build a structured representation of the L5 expectations
 rows = cold_start_df.collect()
 
-# Column index for L5 is the 4th column (0-indexed: _c0, L3, L4, L5)
-l5_col = "L5\nIn addition to everything outlined in L4"
+# --- Dynamic level column resolution ---
+# Look up the column header for the configured level
+target_level_col = LEVEL_COLUMNS.get(USER_LEVEL)
+if not target_level_col:
+    available = list(LEVEL_COLUMNS.keys())
+    raise ValueError(f"Level '{USER_LEVEL}' not found in career_ladder.level_columns. Available: {available}")
 
-career_ladder_text = f"""AI FDE Career Ladder - Level L5 (Senior AI Engineer)
-=====================================================
-Note: L5 expectations are cumulative - they include everything from L3 and L4.
+# Verify the column exists in the data
+available_cols = cold_start_df.columns
+if target_level_col not in available_cols:
+    print(f"WARNING: Column '{target_level_col}' not found. Available columns:")
+    for c in available_cols:
+        print(f"  - {repr(c)}")
+    raise ValueError(f"Column '{target_level_col}' not in Excel. Check career_ladder.level_columns in your config.")
 
+# --- Build career ladder text ---
+career_ladder_text = f"""AI FDE Career Ladder - Level {USER_LEVEL} ({USER_TITLE})
+{'='*60}
 """
 
-for row in rows:
-    category = row["_c0"]
-    l5_value = row[l5_col]
-    if category and l5_value:
-        career_ladder_text += f"\n## {category}\n{l5_value}\n"
-    elif category and not l5_value:
-        career_ladder_text += f"\n--- {category} ---\n"
+if CAREER_LADDER_CUMULATIVE:
+    career_ladder_text += f"Note: {USER_LEVEL} expectations are cumulative (includes all lower levels).\n\n"
 
-print("Career ladder extracted. Length:", len(career_ladder_text), "chars")
-print("\n" + career_ladder_text[:2000] + "...")
+    # Include all levels up to and including the target level
+    level_order = list(LEVEL_COLUMNS.keys())  # assumes ordered L3, L4, L5, L6...
+    target_idx = level_order.index(USER_LEVEL)
+    levels_to_include = level_order[:target_idx + 1]
+
+    for level in levels_to_include:
+        col = LEVEL_COLUMNS[level]
+        if col in available_cols:
+            career_ladder_text += f"\n{'='*40}\n{level} Expectations:\n{'='*40}\n"
+            for row in rows:
+                category = row["_c0"]
+                value = row[col]
+                if category and value:
+                    career_ladder_text += f"\n## {category}\n{value}\n"
+                elif category and not value:
+                    career_ladder_text += f"\n--- {category} ---\n"
+else:
+    # Only the target level
+    for row in rows:
+        category = row["_c0"]
+        value = row[target_level_col]
+        if category and value:
+            career_ladder_text += f"\n## {category}\n{value}\n"
+        elif category and not value:
+            career_ladder_text += f"\n--- {category} ---\n"
+
+print(f"Career ladder extracted for {USER_LEVEL}: {len(career_ladder_text)} chars")
+print(f"\n{career_ladder_text[:2000]}...")
 
 # COMMAND ----------
 
@@ -124,13 +184,13 @@ def format_conversation(conv_id, messages):
         text += f"\nUser: {msg['query']}\n"
         # Truncate very long responses to keep context manageable
         resp = msg['response']
-        if len(resp) > 1500:
-            resp = resp[:1500] + "... [truncated]"
+        if len(resp) > MAX_RESPONSE_LENGTH:
+            resp = resp[:MAX_RESPONSE_LENGTH] + "... [truncated]"
         text += f"Assistant: {resp}\n"
     return text
 
 # Build full chat history text
-chat_history_text = "Chat History - Mohamad Aboufoul\n" + "="*50 + "\n"
+chat_history_text = f"Chat History - {USER_NAME}\n" + "="*50 + "\n"
 chat_history_text += f"Total: {len(chat_rows)} messages across {len(conversations)} conversations\n"
 chat_history_text += f"Tools used: Glean, Perplexity, Gemini\n"
 chat_history_text += f"Date range: June 29 - August 25, 2026\n\n"
@@ -217,7 +277,7 @@ def extract_date_from_title(title):
     return None, None
 
 
-def chunk_text(text, max_chars=40000):
+def chunk_text(text, max_chars=CHUNK_SIZE):
     """Split text into chunks respecting paragraph boundaries."""
     if len(text) <= max_chars:
         return [text]
@@ -636,7 +696,7 @@ print(f"  - Model: {DEFAULT_MODEL}")
 # so any session loss resumes from the last completed step.
 
 # v2: includes interaction_outcomes and response_pattern_claims from Ontology PDF
-CHECKPOINT_TABLE = f"{CATALOG}.{SCHEMA}.profile_checkpoints_v2"
+# CHECKPOINT_TABLE is defined in Cell 1 (from config)
 
 def save_checkpoint(combo_id, combo_label, profiles_dict, step_id, data_sources):
     """Save current profile state as a checkpoint. Overwrites previous state for this combo."""
@@ -653,7 +713,7 @@ def save_checkpoint(combo_id, combo_label, profiles_dict, step_id, data_sources)
     
     # Try delete+append; if table schema is incompatible, overwrite entire table
     try:
-        spark.sql(f"DELETE FROM {CHECKPOINT_TABLE} WHERE data_combo = '{combo_id}'")
+        spark.sql(f"DELETE FROM {CHECKPOINT_TABLE} WHERE data_combo = '{combo_id}' AND user_name = '{USER_NAME}'")
         ckpt_df.write.mode("append").saveAsTable(CHECKPOINT_TABLE)
     except Exception as e:
         print(f"  (Schema mismatch detected, recreating checkpoint table)")
@@ -672,7 +732,7 @@ def load_checkpoint(combo_id):
     try:
         rows = spark.sql(f"""
             SELECT profile_level, profile_yaml, step_id FROM {CHECKPOINT_TABLE}
-            WHERE data_combo = '{combo_id}'
+            WHERE data_combo = '{combo_id}' AND user_name = '{USER_NAME}'
         """).collect()
         if rows:
             profiles = {row['profile_level']: row['profile_yaml'] for row in rows}
@@ -684,11 +744,9 @@ def load_checkpoint(combo_id):
 
 
 def ensure_checkpoint_table():
-    """Create/recreate checkpoint table with correct schema."""
-    # Drop and recreate to avoid schema mismatch issues
-    spark.sql(f"DROP TABLE IF EXISTS {CHECKPOINT_TABLE}")
+    """Create checkpoint table if it doesn't exist (preserves other users' data)."""
     spark.sql(f"""
-        CREATE TABLE {CHECKPOINT_TABLE} (
+        CREATE TABLE IF NOT EXISTS {CHECKPOINT_TABLE} (
             user_name STRING,
             data_combo STRING,
             data_combo_label STRING,

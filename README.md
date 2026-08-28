@@ -10,24 +10,76 @@ Automatic User Context Profiles consolidate information throughout a user's chat
 
 ```
 automatic_user_context_profiles/
-├── profile_builder          # Databricks notebook: iterative profile generation pipeline
-├── profiles/                # All profile outputs, prefix, docs, and build script
-│   ├── prefix.yaml          # Agent instruction prefix (prepended to every profile)
-│   ├── build_profiles.py    # Script to rebuild all 12 files from UC
-│   ├── USAGE_GUIDE.md       # Detailed architecture + runtime usage documentation
-│   ├── {user_slug}_combo_a_level_0_cold_start.yaml
-│   ├── {user_slug}_combo_a_level_1_compact.yaml
-│   ├── {user_slug}_combo_a_level_2_detailed.yaml
-│   ├── {user_slug}_combo_a_level_3_evidence.yaml
-│   ├── {user_slug}_combo_b_level_0_cold_start.yaml
-│   ├── ...                           # (12 files per user)
-│   └── {user_slug}_combo_c_level_3_evidence.yaml
-└── README.md                # This file
+├── profile_builder              # Databricks notebook: iterative profile generation pipeline
+├── configs/                     # User configuration files (one per person)
+│   └── mohamad_aboufoul.yaml    # Example: name, level, tables, paths, model options
+├── profiles/                    # Generated profile outputs (prefix + YAML per user)
+│   ├── prefix.yaml              # Agent instruction prefix (prepended to every profile)
+│   ├── build_profiles.py        # Script to rebuild all files from UC checkpoint table
+│   ├── USAGE_GUIDE.md           # Detailed architecture + runtime usage documentation
+│   ├── {user}_combo_a_level_0_cold_start.yaml
+│   ├── {user}_combo_a_level_1_compact.yaml
+│   ├── ...                      # 12 files per user (4 levels x 3 combos)
+│   └── {user}_combo_c_level_3_evidence.yaml
+└── README.md                    # This file
 ```
 
 ---
 
-## Quick Start: Using Profiles with Agents
+## Getting Started: Building Your Own Profile
+
+### 1. Create your config file
+
+Copy `configs/mohamad_aboufoul.yaml` to `configs/{your_name}.yaml` and fill in your values:
+
+```yaml
+user:
+  name: "Your Name"
+  title: "Your Title"
+  level: "L4"           # L3, L4, L5, L6, etc.
+  tenure: "Jan 2025 - present"
+  team: "Your Team"
+
+data:
+  catalog: "your_catalog"
+  schema: "your_schema"
+  chat_table: "your_chatbot_conversations"  # table with chat history
+  cold_start_volume: "/Volumes/..."          # career ladder Excel location
+  career_ladder_file: "Career Ladder.xlsx"
+  additional_docs_volume: "/Volumes/..."     # PDFs, notes, etc.
+
+career_ladder:
+  level_columns:                             # map each level to its Excel column header
+    L3: "L3\nNew Hire"
+    L4: "L4\nIn addition to everything outlined in L3"
+    L5: "L5\nIn addition to everything outlined in L4"
+  cumulative: true
+
+model:
+  name: "databricks-claude-opus-4-8"
+
+options:
+  chunk_size: 40000
+  max_response_length: 1500
+```
+
+### 2. Run the profile_builder notebook
+
+Set `CONFIG_PATH` in Cell 1 to your config file and run all cells:
+
+```python
+CONFIG_PATH = "/Workspace/.../configs/your_name.yaml"
+```
+
+The notebook generates 12 profiles (4 levels x 3 data combos) and stores them in the shared checkpoint table. Each user's data is isolated by `user_name`.
+
+### 3. Build runtime files
+
+Run `profiles/build_profiles.py` to produce ready-to-paste YAML files (prefix + profile).
+
+---
+
+## Using Profiles with Agents
 
 Each file in `profiles/` is self-contained — it includes both the **agent instruction prefix** (how to interpret the profile) and the **profile YAML** (the actual user context). Pick the right file for your use case:
 
