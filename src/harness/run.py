@@ -574,10 +574,16 @@ def run_agent(
 ) -> AgentRunResult:
     """Launch Claude Code as a subprocess and collect stream-json output.
 
-    EMPIRICAL NOTES (to confirm at Task 5.3):
-      - ``model`` value: passed via --model; confirm the exact alias/id that
-        resolves to databricks-claude-sonnet-4-5 in this environment.
-      - stream-json field paths: localized to _parse_* helpers; update after 5.3.
+    EMPIRICAL NOTES (CONFIRMED at Task 5.3, 2026-08-28):
+      - ``model``: passed via --model; ``--model databricks-claude-sonnet-4-5``
+        resolves correctly through this env's ai-gateway (verified: result JSON
+        modelUsage == 'databricks-claude-sonnet-4-5'). DEFAULT_MODEL is that id.
+      - DO NOT pass --bare: it skips the settings/auth config and the subprocess
+        fails with "OAuth session expired and could not be refreshed". Inheriting
+        the parent env (ANTHROPIC_BASE_URL gateway + auth) is required.
+      - stream-json field paths (_parse_* helpers, _TOOL_TRACE_TYPE): verified
+        against a real transcript — tool_use in assistant.message.content[],
+        tool_result/is_error in user events, usage in the result event.
 
     Budget enforcement:
       - max_minutes: subprocess timeout (SIGKILL → stopped_reason='budget_minutes').
@@ -589,7 +595,6 @@ def run_agent(
         "--verbose",
         "--model", model,
         "--permission-mode", "bypassPermissions",
-        "--bare",
         "--add-dir", worktree,
     ]
     if settings_path:
