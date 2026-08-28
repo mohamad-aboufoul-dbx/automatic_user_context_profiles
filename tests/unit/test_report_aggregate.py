@@ -747,3 +747,116 @@ class TestRenderReport:
         md = render_report(compute_report(rows))
         # The basis column must say "tiebreak" so reader knows it was a tie
         assert "tiebreak" in md.lower()
+
+    # ------------------------------------------------------------------
+    # Table well-formedness: header, separator, and data rows must have
+    # the same number of pipe-delimited columns in each section.
+    # Guards against column add/remove desync (separator out of step with
+    # header or row template) — the class of bug caught in round-2 review.
+    # ------------------------------------------------------------------
+
+    def _full_matrix_rows(self) -> list[dict]:
+        """Rows with data in every efficiency field for all four arms."""
+        arms = ["empty", "static_generic", "retrieved", "placebo"]
+        rows = []
+        for arm in arms:
+            success = arm in ("retrieved", "placebo")
+            rows.append(_row(
+                task_id="T1", arm=arm, repeat_number=1,
+                success=success,
+                exploratory_reads_before_edit=3 if success else 8,
+                total_tool_calls=10 if success else 20,
+                failed_test_cycles=1 if success else 3,
+                elapsed_seconds=60.0,
+                input_tokens=500, output_tokens=300,
+            ))
+        return rows
+
+    @staticmethod
+    def _extract_table_lines(md: str, section_marker: str) -> list[str]:
+        """Return the `|`-prefixed table lines from a section of the report."""
+        table_lines: list[str] = []
+        in_section = False
+        for line in md.splitlines():
+            if section_marker in line:
+                in_section = True
+            if in_section and line.startswith("|"):
+                table_lines.append(line)
+            if in_section and table_lines and line.startswith("---"):
+                break
+        return table_lines
+
+    @staticmethod
+    def _pipe_count(line: str) -> int:
+        return line.count("|")
+
+    def test_section1_table_column_counts_match(self):
+        """Section-1 header, separator, and data rows must have identical pipe counts."""
+        md = render_report(compute_report(self._full_matrix_rows()))
+        tbl = self._extract_table_lines(md, "## 1.")
+        assert len(tbl) >= 3, "Expected header, separator, and at least one data row"
+        header_pipes = self._pipe_count(tbl[0])
+        sep_pipes    = self._pipe_count(tbl[1])
+        row_pipes    = self._pipe_count(tbl[2])
+        assert header_pipes == sep_pipes, (
+            f"Section 1 separator column count ({sep_pipes} pipes) "
+            f"!= header ({header_pipes} pipes).\n"
+            f"  header : {tbl[0]!r}\n"
+            f"  sep    : {tbl[1]!r}"
+        )
+        assert header_pipes == row_pipes, (
+            f"Section 1 data-row column count ({row_pipes} pipes) "
+            f"!= header ({header_pipes} pipes).\n"
+            f"  header : {tbl[0]!r}\n"
+            f"  row    : {tbl[2]!r}"
+        )
+        # Guard: the table should have no double pipes (which would indicate
+        # a split-string boundary error)
+        for line in tbl:
+            assert "||" not in line, f"Double pipe in Section 1 table: {line!r}"
+
+    def test_section2_table_column_counts_match(self):
+        """Section-2 header, separator, and data rows must have identical pipe counts."""
+        md = render_report(compute_report(self._full_matrix_rows()))
+        tbl = self._extract_table_lines(md, "## 2.")
+        assert len(tbl) >= 3, "Expected header, separator, and at least one data row"
+        header_pipes = self._pipe_count(tbl[0])
+        sep_pipes    = self._pipe_count(tbl[1])
+        row_pipes    = self._pipe_count(tbl[2])
+        assert header_pipes == sep_pipes, (
+            f"Section 2 separator column count ({sep_pipes} pipes) "
+            f"!= header ({header_pipes} pipes).\n"
+            f"  header : {tbl[0]!r}\n"
+            f"  sep    : {tbl[1]!r}"
+        )
+        assert header_pipes == row_pipes, (
+            f"Section 2 data-row column count ({row_pipes} pipes) "
+            f"!= header ({header_pipes} pipes).\n"
+            f"  header : {tbl[0]!r}\n"
+            f"  row    : {tbl[2]!r}"
+        )
+        for line in tbl:
+            assert "||" not in line, f"Double pipe in Section 2 table: {line!r}"
+
+    def test_section3_table_column_counts_match(self):
+        """Section-3 header, separator, and data rows must have identical pipe counts."""
+        md = render_report(compute_report(self._full_matrix_rows()))
+        tbl = self._extract_table_lines(md, "## 3.")
+        assert len(tbl) >= 3, "Expected header, separator, and at least one data row"
+        header_pipes = self._pipe_count(tbl[0])
+        sep_pipes    = self._pipe_count(tbl[1])
+        row_pipes    = self._pipe_count(tbl[2])
+        assert header_pipes == sep_pipes, (
+            f"Section 3 separator column count ({sep_pipes} pipes) "
+            f"!= header ({header_pipes} pipes).\n"
+            f"  header : {tbl[0]!r}\n"
+            f"  sep    : {tbl[1]!r}"
+        )
+        assert header_pipes == row_pipes, (
+            f"Section 3 data-row column count ({row_pipes} pipes) "
+            f"!= header ({header_pipes} pipes).\n"
+            f"  header : {tbl[0]!r}\n"
+            f"  row    : {tbl[2]!r}"
+        )
+        for line in tbl:
+            assert "||" not in line, f"Double pipe in Section 3 table: {line!r}"
