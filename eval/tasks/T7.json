@@ -1,0 +1,28 @@
+{
+  "id": "T7",
+  "question": "For a cross-vendor review of a small candidate-source typing change, how should I constrain the work and structure the result?",
+  "expected_answer_elements": [
+    "Treat the task as read-only: do not edit, commit, push, or run implementation work.",
+    "Review the supplied diff against the stated acceptance contract rather than redesigning the surrounding architecture.",
+    "Read repository files only as needed to verify claims.",
+    "Report findings only, prioritizing concrete correctness or contract violations and including file-and-line evidence where available.",
+    "Verify air-gap behavior by reasoning about runtime imports and deferred annotation evaluation, not by broad unrelated refactoring."
+  ],
+  "grounding": {
+    "source_file": "data/raw_abdullah_tab.csv",
+    "conversation_ids": [
+      "477e1874-31cf-4b8d-b848-dca9f9e025a0",
+      "4e556a8c-90a6-4cf8-be07-b8fe8ab6c363"
+    ],
+    "repo_files": [],
+    "support": [
+      "Both review conversations explicitly assign a reviewer role and prohibit edits or implementation.",
+      "The candidate-source review directs the reviewer to judge the diff against the contract and avoid re-architecture.",
+      "The review format requests findings with concrete evidence."
+    ]
+  },
+  "memory_type": "workflow_preference",
+  "task_area": "code_review",
+  "rationale": "Prior context captures a recurring review workflow that avoids an assistant turning a bounded audit into an implementation task.",
+  "safety": "The fixture removes personal paths, vendor identities, and external repository URLs."
+}

@@ -1,0 +1,29 @@
+{
+  "id": "T1",
+  "question": "For the production image-selection integration, what abstraction and output behavior should I preserve so the demo follows the previously chosen clustering direction?",
+  "expected_answer_elements": [
+    "Use an integration-ready image-selection facade around the existing auto-k k-means clusterer rather than exposing only the low-level clusterer.",
+    "The facade should accept stable image identifiers plus precomputed embeddings and map medoid row indices back to caller-facing image identifiers.",
+    "Return both the selected identifiers and the full clustering information, including all medoids, assignments, and diagnostics.",
+    "When a representative cap is applied, rank clusters deterministically by cluster size descending and then cluster identifier ascending; the cap selects a prefix of that ordering.",
+    "Keep the product direction on auto-k k-means and do not replace it with graph, radius, or connected-component selection."
+  ],
+  "grounding": {
+    "source_file": "data/raw_abdullah_tab.csv",
+    "conversation_ids": [
+      "06147d1c-537a-4ac7-b210-43c5909ad7b3"
+    ],
+    "repo_files": [
+      "docs/SPEC.md"
+    ],
+    "support": [
+      "The conversation specifies an image-selection facade wrapping AutoKClusterer over image IDs and embeddings.",
+      "It records selected IDs, all medoid IDs, assignments, raw diagnostics, and deterministic size-then-cluster-ID cap ordering.",
+      "It explicitly rejects graph, radius, and connected-component alternatives."
+    ]
+  },
+  "memory_type": "architecture_decision",
+  "task_area": "image_selection",
+  "rationale": "A cold-start answer could suggest a different clustering method or omit the established facade and cap semantics; retrieved context identifies the exact prior decision.",
+  "safety": "Grounded only in committed project data; personal filesystem prefixes and sensitive domains are omitted."
+}

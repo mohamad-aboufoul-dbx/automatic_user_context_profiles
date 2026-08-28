@@ -1,0 +1,31 @@
+{
+  "id": "T8",
+  "question": "When I assign a narrowly scoped implementation in an existing worktree, what working style and handoff behavior do I consistently expect?",
+  "expected_answer_elements": [
+    "Work only in the named existing worktree and branch; do not create another checkout, worktree, or branch unless requested.",
+    "Read the authoritative spec and nearby repository patterns before changing code.",
+    "Use strict test-driven development when requested: establish the baseline, write failing tests first, then make the smallest implementation pass.",
+    "Keep changes within the ticket boundary and stop rather than starting the next project phase.",
+    "Do not commit or push when the handoff says working-tree only; perform those actions only when explicitly requested.",
+    "Run the exact requested gates and paste real output instead of claiming that tests should pass.",
+    "Keep air-gap constraints intact and avoid new hard dependencies or lockfile changes."
+  ],
+  "grounding": {
+    "source_file": "data/raw_abdullah_tab.csv",
+    "conversation_ids": [
+      "2f697dfa-d82f-4eee-bbec-87cf66760c7a",
+      "137d36c8-f4cb-4a3f-b594-b116295c627c",
+      "06147d1c-537a-4ac7-b210-43c5909ad7b3"
+    ],
+    "repo_files": [],
+    "support": [
+      "The implementation prompts repeatedly require the existing worktree, exact branch boundaries, and no unrequested checkout creation.",
+      "They require spec-driven TDD, minimal changes, exact gates, and real test output.",
+      "Several tasks explicitly prohibit commits, pushes, hard dependencies, and lockfile changes."
+    ]
+  },
+  "memory_type": "user_preference",
+  "task_area": "implementation_workflow",
+  "rationale": "The context arm can immediately follow the user's established operating preferences, while a cold-start assistant would need repeated constraints and corrections.",
+  "safety": "Preferences are technical and generalized; personal names, paths, and sensitive subject matter are excluded."
+}
