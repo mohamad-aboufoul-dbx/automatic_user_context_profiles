@@ -1,0 +1,28 @@
+{
+  "id": "T6",
+  "question": "Before continuing the image embedding work, remind me of the agreed persistence boundary, identity key, hashing rule, and files that must remain out of scope.",
+  "expected_answer_elements": [
+    "Persist every gate-passing image vector in a silver image_embeddings table; the store is independent of representative selection and keeps all vectors.",
+    "Key deduplication and skip-already-embedded logic on content_hash plus an explicit model identity or model_version, not a model basename.",
+    "Use a left anti join before encoding and a keep-only merge on write so identical bytes under the same model are not recomputed, while a changed model identity forces recomputation.",
+    "Define content_hash as SHA-256 over the raw image file bytes before decoding.",
+    "Keep vectors schema-compatible with frame embeddings: ARRAY<DOUBLE>, dimension 1152, unit norm, and max_num_patches 256.",
+    "Do not modify orchestrator dispatch or ExecutionRequest because that work belongs to a parallel task; limit changes to embedding-store modules, embed/skip write paths, and additive config keys."
+  ],
+  "grounding": {
+    "source_file": "data/raw_abdullah_tab.csv",
+    "conversation_ids": [
+      "5eed8adc-4a95-419b-a67f-3ab24a57bb37"
+    ],
+    "repo_files": [],
+    "support": [
+      "The UES8 task locks the store to all gate-passing vectors and separates it from selection.",
+      "It specifies the composite identity key, anti-join, keep-only merge, model invalidation, raw-byte hash, and vector shape.",
+      "It explicitly excludes orchestrator and ExecutionRequest changes due to parallel work."
+    ]
+  },
+  "memory_type": "project_state",
+  "task_area": "embedding_store",
+  "rationale": "The answer depends on several settled boundaries and exact constants that a cold-start assistant would need to rediscover or clarify.",
+  "safety": "Grounding is restricted to committed project data and contains no external system URLs or local paths."
+}

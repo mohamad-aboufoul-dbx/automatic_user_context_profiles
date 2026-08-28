@@ -1,0 +1,26 @@
+{
+  "id": "T2",
+  "question": "The selector cap-ordering tests pass alone but fail after the air-gap import test, and the mock no longer intercepts clustering. What prior failure mode should I check, and how should I make the tests robust?",
+  "expected_answer_elements": [
+    "Check for module reload cleanup that restores sys.modules but leaves stale parent-package attributes or otherwise creates two class identities for AutoKClusterer.",
+    "A class-level patch can target a different AutoKClusterer object than the one retained by the selector module, causing real clustering to run.",
+    "Inject or replace a fake clusterer on the selector instance instead of patching the reloaded class at module scope.",
+    "Keep the asserted ordering contract unchanged: size descending, cluster identifier ascending, with no-cap returning the complete ordered medoid list."
+  ],
+  "grounding": {
+    "source_file": "data/raw_abdullah_tab.csv",
+    "conversation_ids": [
+      "06147d1c-537a-4ac7-b210-43c5909ad7b3"
+    ],
+    "repo_files": [],
+    "support": [
+      "The follow-up reproduces an order-dependent failure after the air-gap test reloads the auto_k module.",
+      "The recorded root cause is a class-identity split that makes class-level monkeypatching miss the selector's binding.",
+      "The successful fix injects a fake clusterer on the selector instance."
+    ]
+  },
+  "memory_type": "failure_and_fix",
+  "task_area": "testing",
+  "rationale": "Without the prior debugging history, an assistant is likely to change correct ordering logic or spend several turns rediscovering Python module identity pollution.",
+  "safety": "Contains no credentials, personal paths, or customer-specific content."
+}

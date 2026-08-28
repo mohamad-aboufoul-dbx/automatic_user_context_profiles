@@ -1,0 +1,29 @@
+{
+  "id": "T4",
+  "question": "I am extending the candidate-source seam from video to image collections. What existing contracts and image-specific behavior should the implementation retain?",
+  "expected_answer_elements": [
+    "Keep FrameCandidate as the shared downstream unit and CandidateSource as a protocol exposing candidates(context) returning a list of FrameCandidate objects.",
+    "Represent an image collection with a mission-level CollectionContext whose ordered members include image_id, image_bytes, and ordinal, with image_ref only as an optional reserved field.",
+    "Decode each valid image to exactly one BGR ndarray using a function-local cv2 import so the output matches the video path.",
+    "Image candidates should not invent video timing values; temporal fields are nullable while image_id and ordinal preserve provenance.",
+    "A corrupt image is skipped and recorded as a per-item failure while other members continue; an empty member list returns an empty candidate list.",
+    "Do not add module-level heavy imports or modify pyproject.toml or uv.lock."
+  ],
+  "grounding": {
+    "source_file": "data/raw_abdullah_tab.csv",
+    "conversation_ids": [
+      "4fc7d653-61c8-4f98-81b0-df7cbbde9ce2",
+      "2f697dfa-d82f-4eee-bbec-87cf66760c7a"
+    ],
+    "repo_files": [],
+    "support": [
+      "The UES1 conversation defines FrameCandidate and CandidateSource as the shared seam.",
+      "The UES2 conversation defines CollectionContext membership, one BGR candidate per image, nullable temporal fields, and per-item decode failures.",
+      "Both conversations require air-gap-safe imports and no dependency-lock changes."
+    ]
+  },
+  "memory_type": "repository_fact",
+  "task_area": "candidate_sources",
+  "rationale": "The repository-specific contracts and BGR/provenance rules are not inferable from a generic image pipeline question and would otherwise require codebase rediscovery.",
+  "safety": "Uses only generic project terminology and omits personal paths and sensitive domains."
+}

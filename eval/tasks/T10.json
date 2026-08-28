@@ -1,0 +1,29 @@
+{
+  "id": "T10",
+  "question": "If I resume the output-schema generalization ticket, what remains inside its boundary, what video compatibility must be proven, and which known issue is intentionally deferred?",
+  "expected_answer_elements": [
+    "Add an image source reader and validator that requires image_bytes or image_ref and orders collection members by ordinal.",
+    "Generalize output schemas and row conversions so source_frame_index and source_timestamp_ms can be null for images without crashing crop or audit paths.",
+    "Carry nullable source_kind and source_ref through frame, crop, and box outputs, while using mission_id as the non-empty sequence_id for image rows.",
+    "Keep crop-contract validation compatible with image rows that have null temporal fields.",
+    "Run the video golden regression before changes and keep video output behavior and integer temporal provenance unchanged afterward.",
+    "Do not change scoring, filtering, crop, or embedding math and do not start the next clustering ticket.",
+    "Leave the text-enrichment frame-index defaulting problem deferred to a later ticket, adding only the requested TODO marker."
+  ],
+  "grounding": {
+    "source_file": "data/raw_abdullah_tab.csv",
+    "conversation_ids": [
+      "137d36c8-f4cb-4a3f-b594-b116295c627c"
+    ],
+    "repo_files": [],
+    "support": [
+      "The UES3 prompt enumerates the image reader, validation, ordinal ordering, nullable temporal fields, and provenance additions.",
+      "It requires a pre-change and post-change video golden regression and forbids changes to scoring, filtering, crop, and embedding behavior.",
+      "It explicitly defers the text-enrichment integer-default issue and prohibits starting UES4."
+    ]
+  },
+  "memory_type": "project_state",
+  "task_area": "schema_generalization",
+  "rationale": "This question tests whether memory can restore a detailed ticket boundary, including a deliberate deferral that a cold-start assistant could mistakenly fix.",
+  "safety": "All content is drawn from committed technical conversations and excludes personal paths and sensitive domains."
+}

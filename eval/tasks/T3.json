@@ -1,0 +1,27 @@
+{
+  "id": "T3",
+  "question": "How should I run a real local regression for the image/video path when the repository environment intentionally omits OpenCV and a normal uv run removes manually installed test packages?",
+  "expected_answer_elements": [
+    "Treat OpenCV-gated skips as an environment limitation rather than proof that the regression passed.",
+    "Install opencv-python-headless as test-only tooling in the existing environment; install pyarrow too when the targeted tests require it.",
+    "Do not add those packages to pyproject.toml or uv.lock.",
+    "Run the verification with uv run --no-sync so uv does not resynchronize the environment and remove the test-only packages.",
+    "Report the actual pytest output rather than saying the tests should pass."
+  ],
+  "grounding": {
+    "source_file": "data/raw_abdullah_tab.csv",
+    "conversation_ids": [
+      "4fc7d653-61c8-4f98-81b0-df7cbbde9ce2"
+    ],
+    "repo_files": [],
+    "support": [
+      "The conversation establishes that OpenCV is deliberately absent and related tests skip locally.",
+      "It records test-only installation of opencv-python-headless and pyarrow without dependency-file changes.",
+      "It identifies uv run --no-sync as necessary because a normal uv run strips the manual installs."
+    ]
+  },
+  "memory_type": "command_or_environment",
+  "task_area": "local_verification",
+  "rationale": "Retrieved context supplies the exact environment workaround and prevents a false-green result based only on skipped tests.",
+  "safety": "Commands are generic and contain no machine-specific paths or secrets."
+}
