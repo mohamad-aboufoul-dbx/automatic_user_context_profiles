@@ -628,10 +628,13 @@ heldout_rows = spark.sql(f"""
 """).first()["n"]
 
 print(f"Held-out/cluster rows present in atomic_memories: {heldout_rows}")
-assert heldout_rows == 0, (
-    f"CONTAMINATION: {heldout_rows} atomic_memories rows reference held-out/cluster "
-    "conversation_ids. Extraction is invalid — refusing to certify this run."
-)
+# Explicit raise (NOT assert): asserts are stripped under python -O/-OO, and this
+# is the backstop that protects the shared atomic_memories table.
+if heldout_rows != 0:
+    raise RuntimeError(
+        f"CONTAMINATION: {heldout_rows} atomic_memories rows reference held-out/cluster "
+        "conversation_ids. Extraction is invalid — refusing to certify this run."
+    )
 print("PASS: zero held-out/cluster contamination in atomic_memories.")
 
 
@@ -647,6 +650,6 @@ sentinel_payload = {
     "memories_written": memories_written,
     "sessions_with_memories": n_sessions_with_memories,
     "llm_failures":     n_llm_failures,
-    "heldout_rows":     0,
+    "heldout_rows":     heldout_rows,
 }
 dbutils.notebook.exit(json.dumps(sentinel_payload))  # noqa: F821
