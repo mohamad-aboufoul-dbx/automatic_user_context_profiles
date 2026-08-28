@@ -1,0 +1,60 @@
+# =============================================================================
+# User Context Profile Configuration — Mohamad Aboufoul
+# =============================================================================
+# This file drives the profile_builder notebook. To create profiles for a
+# different user, copy this file, rename it {first_last}.yaml, and fill in
+# your own values. Then run the notebook with CONFIG_PATH pointing here.
+#
+# All paths are relative to the Unity Catalog volumes and tables.
+# =============================================================================
+
+# --- User Identity ---
+user:
+  name: "Mohamad Aboufoul"
+  title: "Senior AI FDE"
+  level: "L5"                          # Career ladder level (L3, L4, L5, L6, etc.)
+  tenure: "March 2024 - present"
+  team: "AI Field Engineering (AI FDE)"
+
+# --- Data Locations ---
+data:
+  catalog: "ai_fde_hackathon_catalog"
+  schema: "automatic_user_context_profiles"
+
+  # Table containing chat/conversation history
+  # Expected columns: Username, Query, Response, Chat_step, Conversation_id, Tool, Datetime
+  chat_table: "chatbot_conversations_mohamad"
+
+  # UC Volume path to cold-start documents (career ladder Excel, etc.)
+  cold_start_volume: "/Volumes/ai_fde_hackathon_catalog/automatic_user_context_profiles/cold_start_context_documents/"
+
+  # Filename of the career ladder Excel file within cold_start_volume
+  career_ladder_file: "AI FDE Career Ladder (go_aifde_ladders).xlsx"
+
+  # UC Volume path to additional context documents (PDFs, notes, etc.)
+  additional_docs_volume: "/Volumes/ai_fde_hackathon_catalog/automatic_user_context_profiles/chat_additional_context_documents/"
+
+# --- Career Ladder Mapping ---
+# Maps each level to its column header in the career ladder Excel file.
+# The profile builder uses this to dynamically extract the right column.
+career_ladder:
+  level_columns:
+    L3: "L3\nNew Hire"
+    L4: "L4\nIn addition to everything outlined in L3"
+    L5: "L5\nIn addition to everything outlined in L4"
+    L6: "L6\nIn addition to everything outlined in L5"
+  # Set to true to include all lower-level expectations in the extracted text
+  cumulative: true
+
+# --- Model Configuration ---
+model:
+  # Model endpoint for profile generation via ai_query
+  # Opus 4.8 recommended for nuanced capability vs. curiosity distinction
+  name: "databricks-claude-opus-4-8"
+
+# --- Processing Options ---
+options:
+  # Maximum chars per document chunk (larger = fewer LLM calls, but more context per call)
+  chunk_size: 40000
+  # Truncate assistant responses in chat history beyond this length
+  max_response_length: 1500
