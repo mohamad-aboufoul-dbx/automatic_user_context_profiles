@@ -272,6 +272,13 @@ def parse_args() -> argparse.Namespace:
             "Omit to skip chart generation."
         ),
     )
+    parser.add_argument(
+        "--exclude-run-ids", nargs="*", default=[], metavar="RUN_ID",
+        help=(
+            "run_ids to drop before aggregation (e.g. superseded smoke runs). "
+            "Non-destructive: filters the read rows, does not modify eval_runs."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -286,6 +293,16 @@ def main() -> None:
 
     rows = read_eval_runs(args.warehouse, args.profile)
     print(f"[06_report] {len(rows)} rows read from eval_runs.", flush=True)
+
+    if args.exclude_run_ids:
+        excluded = set(args.exclude_run_ids)
+        before = len(rows)
+        rows = [r for r in rows if r.get("run_id") not in excluded]
+        print(
+            f"[06_report] excluded {before - len(rows)} row(s) by --exclude-run-ids "
+            f"({len(excluded)} id(s) requested); {len(rows)} rows remain.",
+            flush=True,
+        )
 
     report = compute_report(rows)
 
