@@ -328,10 +328,13 @@ def parse_memory_response(raw: str) -> list[dict]:
     variants. Returns [] when nothing parseable is found.
     """
     s = (raw or "").strip()
-    # Strip a leading/trailing markdown code fence if present.
-    if s.startswith("```"):
-        s = re.sub(r"^```[a-zA-Z0-9]*\s*", "", s)
-        s = re.sub(r"\s*```$", "", s).strip()
+    if not s:
+        return []
+    # If a markdown code fence appears ANYWHERE (Claude often wraps JSON in
+    # ```json … ```, sometimes after a preamble line), prefer its contents.
+    fence = re.search(r"```(?:json|JSON)?\s*(.*?)```", s, re.DOTALL)
+    if fence:
+        s = fence.group(1).strip()
 
     def _coerce(obj):
         if isinstance(obj, dict):
@@ -426,21 +429,38 @@ print(f"extraction_run_id = {EXTRACTION_RUN_ID}")
 
 if DRY_RUN:
     print("=== DRY RUN — one LLM call, no writes ===")
-    sample_memories = 0
+    # Diagnostics surfaced in the exit payload (serverless has no driver logs via
+    # get-run-output, so everything the controller needs must ride in the exit).
+    sample_conversation_id = None
+    sample_event_count = 0
+    transcript_chars = 0
+    raw_response = ""
+    parsed_count = 0
+    validated_count = 0
+    validation_errors: list[str] = []
+
     if not eligible:
         print("No eligible sessions — nothing to sample.")
     else:
         s0 = eligible[0]
+        sample_conversation_id = s0["conversation_id"]
+        sample_event_count = s0["event_count"]
         transcript = build_transcript(s0)
-        print(f"conversation_id : {s0['conversation_id']}")
-        print(f"transcript length (chars): {len(transcript)}")
+        transcript_chars = len(transcript)
+        print(f"conversation_id : {sample_conversation_id}")
+        print(f"event_count     : {sample_event_count}")
+        print(f"transcript length (chars): {transcript_chars}")
         user_prompt = fill_user_prompt(s0, transcript)
         raw = call_llm(SYSTEM_PROMPT, user_prompt)
+        raw_response = raw or ""
         print("\n=== RAW MODEL RESPONSE ===")
-        print(raw)
-        candidates = parse_memory_response(raw)
+        print(raw_response)
+        candidates = parse_memory_response(raw_response)
+        parsed_count = len(candidates)
         kept, reasons = validated_memories(candidates)
-        sample_memories = len(kept)
+        validated_count = len(kept)
+        validation_errors = reasons
+        print(f"\nparsed_count={parsed_count}  validated_count={validated_count}")
         print("\n=== VALIDATION REASONS (dropped/notes) ===")
         for r in reasons:
             print(f"  - {r}")
@@ -448,11 +468,19 @@ if DRY_RUN:
         print(json.dumps(kept, indent=2, default=str))
 
     sentinel_payload = {
-        "sentinel":        "extract_dryrun:OK",
-        "status":          "OK",
-        "stage":           "extract_dryrun",
-        "eligible":        len(eligible),
-        "sample_memories": sample_memories,
+        "sentinel":          "extract_dryrun:OK",
+        "status":            "OK",
+        "stage":             "extract_dryrun",
+        "eligible":          len(eligible),
+        "sample_memories":   validated_count,
+        # --- diagnostics (no driver logs on serverless) ---
+        "conversation_id":   sample_conversation_id,
+        "event_count":       sample_event_count,
+        "transcript_chars":  transcript_chars,
+        "parsed_count":      parsed_count,
+        "validated_count":   validated_count,
+        "validation_errors": validation_errors[:5],
+        "raw_response":      raw_response[:2500],
     }
     dbutils.notebook.exit(json.dumps(sentinel_payload))  # noqa: F821
 
