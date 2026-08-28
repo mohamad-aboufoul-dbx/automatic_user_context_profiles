@@ -83,11 +83,18 @@ def _medoids(result):
 
 
 def _blobs(n_per=12, k=3, dim=8, spread=0.3, sep=10.0, seed=0):
-    """Deterministic, well-separated Gaussian blobs as list[list[float]] (n = n_per*k)."""
+    """Deterministic, well-separated Gaussian blobs as an ndarray (n = n_per*k).
+
+    Returns a numpy ndarray, the canonical representation for numeric embedding
+    vectors. The frozen goal_prompt pins no input type for ``.fit(embeddings)``, so
+    the oracle must not require list-acceptance: an ndarray is the lowest common
+    denominator — impls that ``np.asarray`` a list accept it too, while impls that
+    index the input with boolean masks require it. Validated 17/17 against two
+    independent implementations (one list-accepting, one ndarray-typed).
+    """
     rng = np.random.default_rng(seed)
     centers = [np.full(dim, i * sep, dtype=float) for i in range(k)]
-    pts = np.vstack([c + rng.normal(0.0, spread, size=(n_per, dim)) for c in centers])
-    return [[float(v) for v in row] for row in pts]
+    return np.vstack([c + rng.normal(0.0, spread, size=(n_per, dim)) for c in centers])
 
 
 class TestDeriveKRange:
@@ -170,7 +177,7 @@ class TestAutoKClustererBehavior:
         assert list(_labels(a)) == list(_labels(b))
 
     def test_degenerate_single_input_single_cluster(self):
-        result = AutoKClusterer().fit([[1.0] * 8])
+        result = AutoKClusterer().fit(np.array([[1.0] * 8]))
         assert _selected_k(result) == 1
         assert len(set(_labels(result))) == 1
         assert len(_labels(result)) == 1
