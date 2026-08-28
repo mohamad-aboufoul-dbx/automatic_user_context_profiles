@@ -46,7 +46,7 @@ Options
 --warehouse   Databricks SQL warehouse ID (default: 41659c95dacd3bf0).
 --profile     ~/.databrickscfg profile (default: hackathon).
 --output      Path to write the markdown report (default: stdout only).
---no-charts   Skip optional matplotlib PNG generation (default: charts off).
+--charts-dir  Directory to write optional matplotlib PNG charts (opt-in; omit to skip).
 """
 
 from __future__ import annotations

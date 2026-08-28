@@ -935,10 +935,12 @@ def run_one(
         # ── Step 7: T1 oracle overwrite (BEFORE acceptance) ─────────────────
         # Contamination invariant: oracle is kept OUT of agent context during run;
         # written only here, after the run completes.
-        # T1_ORACLE_COMMIT / T1_ORACLE_FIXTURE_PATH are the live fallback defaults
-        # when the task_def's acceptance_oracle omits either field.
-        if task_id == "T1" and "acceptance_oracle" in task_def:
-            oracle_spec = task_def["acceptance_oracle"]
+        # Gate on task_id == "T1" ONLY — do NOT require "acceptance_oracle" key.
+        # If the key is absent, fall through to the module-level constants so the
+        # fallback is real (not bypassed).  T1_ORACLE_COMMIT / T1_ORACLE_FIXTURE_PATH
+        # are the live authoritative defaults.
+        if task_id == "T1":
+            oracle_spec = task_def.get("acceptance_oracle", {})
             _oracle_commit = oracle_spec.get("source_commit", T1_ORACLE_COMMIT)
             _oracle_fixture = oracle_spec.get("fixture_path", T1_ORACLE_FIXTURE_PATH)
             oracle_content = _get_oracle(platform_repo, _oracle_commit, _oracle_fixture)
@@ -948,11 +950,29 @@ def run_one(
                 fh.write(oracle_content)
 
         # ── Step 8: run acceptance + regression + forbidden check ────────────
-        acceptance_tests_passed, _acc_out = _run_cmd(acceptance_command, worktree_path)
+        # Use a budget-derived timeout so T2/T3 live-workspace acceptance suites
+        # don't hit the plumbing default.  Catch TimeoutExpired and treat as FAILED
+        # rather than crashing the matrix.
+        _suite_timeout = max_minutes * 60
+        _step8_failure: Optional[str] = None
+
+        try:
+            acceptance_tests_passed, _acc_out = _run_cmd(
+                acceptance_command, worktree_path, timeout=_suite_timeout
+            )
+        except subprocess.TimeoutExpired:
+            acceptance_tests_passed = False
+            _step8_failure = "acceptance_timeout"
 
         if regression_command:
-            regression_tests_passed_val, _ = _run_cmd(regression_command, worktree_path)
-            regression_tests_passed: Optional[bool] = regression_tests_passed_val
+            try:
+                regression_tests_passed_val, _ = _run_cmd(
+                    regression_command, worktree_path, timeout=_suite_timeout
+                )
+                regression_tests_passed: Optional[bool] = regression_tests_passed_val
+            except subprocess.TimeoutExpired:
+                regression_tests_passed = False
+                _step8_failure = _step8_failure or "regression_timeout"
         else:
             regression_tests_passed = None  # null = no regression cmd = not a failure
 
@@ -1002,7 +1022,7 @@ def run_one(
             output_tokens=agent_result.tokens_out,
             trace_path=trace_path,
             final_diff_path=final_diff_path,
-            failure_reason=None,
+            failure_reason=_step8_failure,  # None on clean run; set on suite timeout
             started_at=started_at,
             completed_at=completed_at,
         )
@@ -1085,25 +1105,34 @@ def run_matrix(
                     f"[run_matrix] starting run: task={tid} arm={arm} repeat={rep}",
                     flush=True,
                 )
-                row = run_one(
-                    task_def=task_def,
-                    arm=arm,
-                    repeat=rep,
-                    artifact=artifact,
-                    model=model,
-                    platform_repo=platform_repo,
-                    run_agent_fn=run_agent_fn,
-                    write_row_fn=write_row_fn,
-                    upload_fn=upload_fn,
-                    get_oracle_fn=get_oracle_fn,
-                    warehouse_id=warehouse_id,
-                    profile=profile,
-                    runs_volume_base=runs_volume_base,
-                )
-                rows.append(row)
-                print(
-                    f"[run_matrix] done: run_id={row.run_id} success={row.success}"
-                    f" failure_reason={row.failure_reason}",
-                    flush=True,
-                )
+                try:
+                    row = run_one(
+                        task_def=task_def,
+                        arm=arm,
+                        repeat=rep,
+                        artifact=artifact,
+                        model=model,
+                        platform_repo=platform_repo,
+                        run_agent_fn=run_agent_fn,
+                        write_row_fn=write_row_fn,
+                        upload_fn=upload_fn,
+                        get_oracle_fn=get_oracle_fn,
+                        warehouse_id=warehouse_id,
+                        profile=profile,
+                        runs_volume_base=runs_volume_base,
+                    )
+                    rows.append(row)
+                    print(
+                        f"[run_matrix] done: run_id={row.run_id} success={row.success}"
+                        f" failure_reason={row.failure_reason}",
+                        flush=True,
+                    )
+                except Exception as exc:
+                    # One flaky run must never abort the remaining matrix.
+                    # Prior rows are already written to UC; log and continue.
+                    print(
+                        f"[run_matrix] ERROR: run crashed and will be skipped "
+                        f"task={tid} arm={arm} repeat={rep}: {exc}",
+                        flush=True,
+                    )
     return rows

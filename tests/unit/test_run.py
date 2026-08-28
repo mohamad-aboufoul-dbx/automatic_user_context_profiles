@@ -35,8 +35,18 @@ from harness.run import (
     _parse_agent_echo,
     _parse_usage,
     adapt_stream_json_to_trace,
+    run_matrix,
     run_one,
 )
+
+
+def _noop_oracle(repo: str, commit: str, path: str) -> str:
+    """Stub oracle for tests that don't test oracle behaviour.
+
+    Returns minimal non-empty content so run_one can write the file
+    without hitting the real git repo.
+    """
+    return f"# stub oracle for {path}\n"
 
 
 # ---------------------------------------------------------------------------
@@ -127,10 +137,14 @@ def canned_artifact(canned_memory_markdown):
 
 @pytest.fixture
 def canned_task_def(fake_git_repo):
-    """A minimal task definition using a fast acceptance command."""
+    """A minimal task definition using a fast acceptance command.
+
+    Uses task_id="T_TEST" (not "T1") so oracle logic is not triggered —
+    tests that specifically test oracle behaviour construct their own T1 task_def.
+    """
     _, starting_commit = fake_git_repo
     return {
-        "task_id": "T1",
+        "task_id": "T_TEST",
         "goal_prompt": "/goal do something",
         "repository": "~/Projects/platform",
         "starting_commit": starting_commit,
@@ -613,7 +627,7 @@ class TestRunOneSuccessCombos:
             reg_cmd = f"{sys.executable} -c 'import sys; sys.exit({rc})'"
 
         task_def = {
-            "task_id": "T1",
+            "task_id": "T_TEST",
             "goal_prompt": "/goal do something",
             "repository": "~/Projects/platform",
             "starting_commit": starting_commit,
@@ -1052,7 +1066,7 @@ class TestRunOneRowAssembly:
 
         # NOT NULL columns must be non-None
         assert row.run_id is not None and len(row.run_id) == 36  # UUID
-        assert row.task_id == "T1"
+        assert row.task_id == "T_TEST"
         assert row.arm == "retrieved"
         assert row.repeat_number == 2
         assert row.artifact_id == "art-001"
@@ -1321,3 +1335,351 @@ class TestCheckForbiddenUnchanged:
                 ["git", "worktree", "remove", "--force", wt],
                 cwd=platform_repo, capture_output=True,
             )
+
+
+# ---------------------------------------------------------------------------
+# Tests: Important 1 — acceptance/regression timeout does not crash matrix
+# ---------------------------------------------------------------------------
+
+class TestAcceptanceRegressionTimeout:
+    """Verify that TimeoutExpired on acceptance/regression is caught and recorded,
+    not propagated (Fix: Important 1)."""
+
+    def test_acceptance_timeout_records_failure_reason(
+        self, fake_git_repo, canned_artifact, canned_task_def
+    ):
+        """acceptance_timeout: failure_reason set, row written, no exception raised."""
+        platform_repo, _ = fake_git_repo
+        sentinel = canned_artifact["sentinel"]
+
+        def stub_agent(worktree, prompt, model, *, max_minutes, max_tool_calls):
+            return _make_agent_result(sentinel=sentinel)
+
+        def stub_timeout_cmd(cmd, cwd, timeout=120):
+            raise subprocess.TimeoutExpired(cmd=cmd, timeout=timeout)
+
+        with patch("harness.run._run_cmd", side_effect=stub_timeout_cmd):
+            row = run_one(
+                task_def=canned_task_def,
+                arm="retrieved",
+                repeat=1,
+                artifact=canned_artifact,
+                platform_repo=platform_repo,
+                run_agent_fn=stub_agent,
+                write_row_fn=_noop_write,
+                upload_fn=_noop_upload,
+            )
+
+        assert row.failure_reason == "acceptance_timeout"
+        assert row.acceptance_tests_passed is False
+        assert row.success is False
+
+    def test_acceptance_timeout_does_not_raise(
+        self, fake_git_repo, canned_artifact, canned_task_def
+    ):
+        """TimeoutExpired must be swallowed — run_one must return normally."""
+        platform_repo, _ = fake_git_repo
+        sentinel = canned_artifact["sentinel"]
+
+        def stub_agent(worktree, prompt, model, *, max_minutes, max_tool_calls):
+            return _make_agent_result(sentinel=sentinel)
+
+        call_count = [0]
+
+        def stub_timeout_cmd(cmd, cwd, timeout=120):
+            call_count[0] += 1
+            raise subprocess.TimeoutExpired(cmd=cmd, timeout=timeout)
+
+        # Should not raise anything
+        row = None
+        with patch("harness.run._run_cmd", side_effect=stub_timeout_cmd):
+            row = run_one(
+                task_def=canned_task_def,
+                arm="retrieved",
+                repeat=1,
+                artifact=canned_artifact,
+                platform_repo=platform_repo,
+                run_agent_fn=stub_agent,
+                write_row_fn=_noop_write,
+                upload_fn=_noop_upload,
+            )
+        assert row is not None
+        assert call_count[0] >= 1  # acceptance command was attempted
+
+    def test_regression_timeout_records_failure_reason(
+        self, fake_git_repo, canned_artifact
+    ):
+        """regression_timeout: failure_reason set when regression cmd times out."""
+        platform_repo, starting_commit = fake_git_repo
+        sentinel = canned_artifact["sentinel"]
+
+        # acceptance passes, regression times out
+        call_count = [0]
+
+        def stub_cmd_with_regression_timeout(cmd, cwd, timeout=120):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return True, "ok"  # acceptance passes
+            raise subprocess.TimeoutExpired(cmd=cmd, timeout=timeout)  # regression times out
+
+        task_def_with_regression = {
+            "task_id": "T_TEST",
+            "goal_prompt": "/goal do something",
+            "repository": "~/Projects/platform",
+            "starting_commit": starting_commit,
+            "acceptance_command": "true",
+            "regression_command": "pytest regressions/",
+            "required_files": ["src/main.py"],
+            "forbidden_files": [],
+            "max_minutes": 30,
+            "max_tool_calls": 120,
+        }
+
+        def stub_agent(worktree, prompt, model, *, max_minutes, max_tool_calls):
+            return _make_agent_result(sentinel=sentinel)
+
+        with patch("harness.run._run_cmd", side_effect=stub_cmd_with_regression_timeout):
+            row = run_one(
+                task_def=task_def_with_regression,
+                arm="retrieved",
+                repeat=1,
+                artifact=canned_artifact,
+                platform_repo=platform_repo,
+                run_agent_fn=stub_agent,
+                write_row_fn=_noop_write,
+                upload_fn=_noop_upload,
+            )
+
+        assert row.failure_reason == "regression_timeout"
+        assert row.regression_tests_passed is False
+        assert row.success is False
+
+    def test_acceptance_timeout_uses_budget_timeout(
+        self, fake_git_repo, canned_artifact, canned_task_def
+    ):
+        """acceptance timeout is max_minutes*60, not the plumbing 120s default."""
+        platform_repo, _ = fake_git_repo
+        sentinel = canned_artifact["sentinel"]
+        observed_timeouts = []
+
+        def spy_cmd(cmd, cwd, timeout=120):
+            observed_timeouts.append(timeout)
+            return True, "ok"
+
+        def stub_agent(worktree, prompt, model, *, max_minutes, max_tool_calls):
+            return _make_agent_result(sentinel=sentinel)
+
+        # canned_task_def has max_minutes=30 → expected timeout = 30*60 = 1800s
+        with patch("harness.run._run_cmd", side_effect=spy_cmd):
+            run_one(
+                task_def=canned_task_def,
+                arm="retrieved",
+                repeat=1,
+                artifact=canned_artifact,
+                platform_repo=platform_repo,
+                run_agent_fn=stub_agent,
+                write_row_fn=_noop_write,
+                upload_fn=_noop_upload,
+            )
+
+        assert len(observed_timeouts) >= 1
+        # Every _run_cmd call in Step 8 must use the budget timeout (1800s for max_minutes=30)
+        for t in observed_timeouts:
+            assert t == 30 * 60, f"Expected budget timeout 1800s, got {t}s"
+
+
+# ---------------------------------------------------------------------------
+# Tests: Important 2 — run_matrix isolation: one crash must not kill the batch
+# ---------------------------------------------------------------------------
+
+class TestRunMatrixIsolation:
+    """Verify run_matrix catches exceptions from individual run_one calls and
+    continues to the remaining runs (Fix: Important 2)."""
+
+    def test_crash_in_one_run_does_not_abort_others(
+        self, fake_git_repo, canned_artifact, tmp_path
+    ):
+        """When run_one raises for (T1, empty, 1), other cells still run."""
+        platform_repo, starting_commit = fake_git_repo
+        sentinel = canned_artifact["sentinel"]
+
+        # Build a minimal eval_tasks dir (T_TEST avoids oracle gate)
+        tasks_dir = tmp_path / "tasks"
+        tasks_dir.mkdir()
+        task_def = {
+            "task_id": "T_TEST",
+            "goal_prompt": "/goal do something",
+            "repository": "~/Projects/platform",
+            "starting_commit": starting_commit,
+            "acceptance_command": f"{sys.executable} -c 'import sys; sys.exit(0)'",
+            "regression_command": None,
+            "required_files": [],
+            "forbidden_files": [],
+            "max_minutes": 30,
+            "max_tool_calls": 120,
+        }
+        (tasks_dir / "T_TEST.json").write_text(json.dumps(task_def))
+
+        artifacts = {
+            ("T_TEST", "empty"):     {**canned_artifact, "arm": "empty"},
+            ("T_TEST", "retrieved"): {**canned_artifact, "arm": "retrieved"},
+        }
+
+        # run_matrix iterates arms in order: "empty" first, "retrieved" second.
+        # Crash the first call; succeed the second.
+        call_count = [0]
+
+        def selective_agent(worktree, prompt, model, *, max_minutes, max_tool_calls):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                raise RuntimeError("simulated worktree crash on first arm")
+            return _make_agent_result(sentinel=sentinel)
+
+        rows = run_matrix(
+            task_ids=["T_TEST"],
+            arms=["empty", "retrieved"],
+            repeats=1,
+            eval_tasks_dir=str(tasks_dir),
+            platform_repo=platform_repo,
+            artifacts_override=artifacts,
+            run_agent_fn=selective_agent,
+            write_row_fn=_noop_write,
+            upload_fn=_noop_upload,
+        )
+
+        # Only the retrieved arm should have produced a row
+        assert len(rows) == 1
+        assert rows[0].arm == "retrieved"
+
+    def test_crash_prints_error_line(
+        self, fake_git_repo, canned_artifact, tmp_path, capsys
+    ):
+        """Crash in run_one prints a visible ERROR line with task/arm/repeat."""
+        platform_repo, starting_commit = fake_git_repo
+
+        tasks_dir = tmp_path / "tasks"
+        tasks_dir.mkdir()
+        task_def = {
+            "task_id": "T_TEST",
+            "goal_prompt": "/goal",
+            "repository": "~/Projects/platform",
+            "starting_commit": starting_commit,
+            "acceptance_command": "true",
+            "regression_command": None,
+            "required_files": [],
+            "forbidden_files": [],
+            "max_minutes": 30,
+            "max_tool_calls": 120,
+        }
+        (tasks_dir / "T_TEST.json").write_text(json.dumps(task_def))
+
+        artifacts = {("T_TEST", "empty"): {**canned_artifact, "arm": "empty"}}
+
+        def crashing_agent(worktree, prompt, model, *, max_minutes, max_tool_calls):
+            raise RuntimeError("injected crash")
+
+        run_matrix(
+            task_ids=["T_TEST"],
+            arms=["empty"],
+            repeats=1,
+            eval_tasks_dir=str(tasks_dir),
+            platform_repo=platform_repo,
+            artifacts_override=artifacts,
+            run_agent_fn=crashing_agent,
+            write_row_fn=_noop_write,
+            upload_fn=_noop_upload,
+        )
+
+        out = capsys.readouterr().out
+        assert "ERROR" in out
+        assert "T_TEST" in out
+        assert "empty" in out
+
+
+# ---------------------------------------------------------------------------
+# Tests: Important 3 — T1 oracle written even when acceptance_oracle key absent
+# ---------------------------------------------------------------------------
+
+class TestT1OracleKeyAbsent:
+    """Verify the oracle is written for T1 even when 'acceptance_oracle' is not
+    present in task_def (Fix: Important 3 — gate is now just `task_id == "T1"`)."""
+
+    def test_oracle_written_when_key_absent(
+        self, fake_git_repo, canned_artifact, canned_task_def
+    ):
+        """T1 without acceptance_oracle key → module constants used, oracle written."""
+        platform_repo, _ = fake_git_repo
+        sentinel = canned_artifact["sentinel"]
+
+        oracle_calls = []
+
+        def fake_get_oracle(repo, commit, path):
+            oracle_calls.append((commit, path))
+            return "# oracle\ndef test_fallback(): pass\n"
+
+        # task_def has NO acceptance_oracle key at all
+        task_def_no_oracle_key = {k: v for k, v in canned_task_def.items()
+                                   if k != "acceptance_oracle"}
+        assert "acceptance_oracle" not in task_def_no_oracle_key
+        task_def_no_oracle_key["task_id"] = "T1"
+
+        def stub_agent(worktree, prompt, model, *, max_minutes, max_tool_calls):
+            return _make_agent_result(sentinel=sentinel)
+
+        run_one(
+            task_def=task_def_no_oracle_key,
+            arm="retrieved",
+            repeat=1,
+            artifact=canned_artifact,
+            platform_repo=platform_repo,
+            run_agent_fn=stub_agent,
+            write_row_fn=_noop_write,
+            upload_fn=_noop_upload,
+            get_oracle_fn=fake_get_oracle,
+        )
+
+        # Oracle must have been called with the module constants as defaults
+        assert len(oracle_calls) == 1, "Oracle must be written even without acceptance_oracle key"
+        commit_used, path_used = oracle_calls[0]
+        assert commit_used == T1_ORACLE_COMMIT
+        assert path_used == T1_ORACLE_FIXTURE_PATH
+
+    def test_oracle_not_written_during_agent_run(
+        self, fake_git_repo, canned_artifact, canned_task_def
+    ):
+        """Contamination invariant: even without key, oracle is only written AFTER agent."""
+        platform_repo, _ = fake_git_repo
+        sentinel = canned_artifact["sentinel"]
+
+        oracle_content = "# oracle after run\n"
+        fixture_path = T1_ORACLE_FIXTURE_PATH
+        worktree_snapshot = {}
+
+        def fake_get_oracle(repo, commit, path):
+            return oracle_content
+
+        task_def_no_key = {k: v for k, v in canned_task_def.items()
+                           if k != "acceptance_oracle"}
+        task_def_no_key["task_id"] = "T1"
+
+        def stub_agent(worktree, prompt, model, *, max_minutes, max_tool_calls):
+            # Record whether oracle file exists DURING agent run
+            oracle_path = os.path.join(worktree, fixture_path)
+            worktree_snapshot["oracle_during_run"] = os.path.exists(oracle_path)
+            return _make_agent_result(sentinel=sentinel)
+
+        run_one(
+            task_def=task_def_no_key,
+            arm="retrieved",
+            repeat=1,
+            artifact=canned_artifact,
+            platform_repo=platform_repo,
+            run_agent_fn=stub_agent,
+            write_row_fn=_noop_write,
+            upload_fn=_noop_upload,
+            get_oracle_fn=fake_get_oracle,
+        )
+
+        assert worktree_snapshot["oracle_during_run"] is False, (
+            "Oracle must not be present during agent run (contamination invariant)"
+        )
