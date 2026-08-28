@@ -97,6 +97,8 @@ class PairedDelta:
     med_delta_exploratory_reads: Optional[float]  # retrieved_med - comparator_med
     med_delta_tool_calls: Optional[float]
     med_delta_failed_cycles: Optional[float]
+    med_delta_elapsed_seconds: Optional[float]
+    med_delta_tokens: Optional[float]
 
 
 @dataclass
@@ -261,6 +263,14 @@ def compute_paired_deltas(
                 ret.med_failed_test_cycles if ret else None,
                 cmp.med_failed_test_cycles if cmp else None,
             )
+            med_sec_delta = _delta(
+                ret.med_elapsed_seconds if ret else None,
+                cmp.med_elapsed_seconds if cmp else None,
+            )
+            med_tok_delta = _delta(
+                ret.med_tokens if ret else None,
+                cmp.med_tokens if cmp else None,
+            )
 
             deltas.append(PairedDelta(
                 task_id=task_id,
@@ -269,6 +279,8 @@ def compute_paired_deltas(
                 med_delta_exploratory_reads=med_expl_delta,
                 med_delta_tool_calls=med_tc_delta,
                 med_delta_failed_cycles=med_fc_delta,
+                med_delta_elapsed_seconds=med_sec_delta,
+                med_delta_tokens=med_tok_delta,
             ))
 
     return deltas
@@ -554,9 +566,11 @@ def render_report(report: ReportData) -> str:
         "'—' means the metric was unavailable for one or both arms.",
         "",
         "| Task | Comparator | Δ success_rate"
-        " | Δ med_expl_reads | Δ med_tool_calls | Δ med_fail_cycles |",
+        " | Δ med_expl_reads | Δ med_tool_calls | Δ med_fail_cycles"
+        " | Δ med_secs | Δ med_tokens |",
         "|------|------------|----------------|"
-        "------------------|------------------|-------------------|",
+        "------------------|------------------|------------------"
+        "|------------|--------------|",
     ]
 
     sorted_deltas = sorted(
@@ -570,6 +584,8 @@ def render_report(report: ReportData) -> str:
             f" | {_fmt_delta(d.med_delta_exploratory_reads)}"
             f" | {_fmt_delta(d.med_delta_tool_calls)}"
             f" | {_fmt_delta(d.med_delta_failed_cycles)}"
+            f" | {_fmt_delta(d.med_delta_elapsed_seconds)}"
+            f" | {_fmt_delta(d.med_delta_tokens)}"
             " |"
         )
 

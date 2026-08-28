@@ -321,6 +321,138 @@ class TestComputePairedDeltas:
         assert d.success_rate_delta is None
         assert d.med_delta_exploratory_reads is None
 
+    def test_elapsed_seconds_delta_negative_means_retrieved_faster(self):
+        """med_delta_elapsed_seconds < 0 means retrieved was faster."""
+        # retrieved: 60s, empty: 90s  →  delta = 60 - 90 = -30 (retrieved faster)
+        sums = self._make_summaries()
+        # Override elapsed_seconds for retrieved and empty
+        sums[("T1", "retrieved")] = ArmSummary(
+            task_id="T1", arm="retrieved",
+            n_runs=3, n_success=2, success_rate=0.67,
+            med_exploratory_reads=3.0, med_total_tool_calls=8.0,
+            med_failed_test_cycles=1.0, med_elapsed_seconds=60.0,
+            med_tokens=800.0,
+        )
+        sums[("T1", "empty")] = ArmSummary(
+            task_id="T1", arm="empty",
+            n_runs=3, n_success=1, success_rate=0.33,
+            med_exploratory_reads=7.0, med_total_tool_calls=15.0,
+            med_failed_test_cycles=2.0, med_elapsed_seconds=90.0,
+            med_tokens=1200.0,
+        )
+        deltas = compute_paired_deltas(sums, ["T1"])
+        d = next(d for d in deltas if d.comparator_arm == "empty")
+        assert d.med_delta_elapsed_seconds == pytest.approx(60.0 - 90.0)  # -30.0
+
+    def test_elapsed_seconds_delta_none_when_no_successes(self):
+        """If comparator has no successful runs, med_delta_elapsed_seconds is None."""
+        sums = {
+            ("T1", "retrieved"): ArmSummary(
+                task_id="T1", arm="retrieved",
+                n_runs=3, n_success=3, success_rate=1.0,
+                med_exploratory_reads=3.0, med_total_tool_calls=8.0,
+                med_failed_test_cycles=1.0, med_elapsed_seconds=60.0,
+                med_tokens=800.0,
+            ),
+            ("T1", "empty"): ArmSummary(
+                task_id="T1", arm="empty",
+                n_runs=3, n_success=0, success_rate=0.0,
+                med_exploratory_reads=None, med_total_tool_calls=None,
+                med_failed_test_cycles=None, med_elapsed_seconds=None,
+                med_tokens=None,
+            ),
+            ("T1", "static_generic"): ArmSummary(
+                task_id="T1", arm="static_generic",
+                n_runs=3, n_success=0, success_rate=0.0,
+                med_exploratory_reads=None, med_total_tool_calls=None,
+                med_failed_test_cycles=None, med_elapsed_seconds=None,
+                med_tokens=None,
+            ),
+            ("T1", "placebo"): ArmSummary(
+                task_id="T1", arm="placebo",
+                n_runs=3, n_success=0, success_rate=0.0,
+                med_exploratory_reads=None, med_total_tool_calls=None,
+                med_failed_test_cycles=None, med_elapsed_seconds=None,
+                med_tokens=None,
+            ),
+        }
+        deltas = compute_paired_deltas(sums, ["T1"])
+        d = next(d for d in deltas if d.comparator_arm == "empty")
+        assert d.med_delta_elapsed_seconds is None
+
+    def test_tokens_delta_negative_means_retrieved_cheaper(self):
+        """med_delta_tokens < 0 means retrieved used fewer tokens."""
+        # retrieved: 800, placebo: 1500  →  delta = 800 - 1500 = -700
+        sums = {
+            ("T1", "retrieved"): ArmSummary(
+                task_id="T1", arm="retrieved",
+                n_runs=3, n_success=3, success_rate=1.0,
+                med_exploratory_reads=3.0, med_total_tool_calls=8.0,
+                med_failed_test_cycles=1.0, med_elapsed_seconds=50.0,
+                med_tokens=800.0,
+            ),
+            ("T1", "empty"): ArmSummary(
+                task_id="T1", arm="empty",
+                n_runs=3, n_success=1, success_rate=0.33,
+                med_exploratory_reads=7.0, med_total_tool_calls=15.0,
+                med_failed_test_cycles=2.0, med_elapsed_seconds=80.0,
+                med_tokens=1200.0,
+            ),
+            ("T1", "static_generic"): ArmSummary(
+                task_id="T1", arm="static_generic",
+                n_runs=3, n_success=1, success_rate=0.33,
+                med_exploratory_reads=6.0, med_total_tool_calls=12.0,
+                med_failed_test_cycles=2.0, med_elapsed_seconds=75.0,
+                med_tokens=1100.0,
+            ),
+            ("T1", "placebo"): ArmSummary(
+                task_id="T1", arm="placebo",
+                n_runs=3, n_success=1, success_rate=0.33,
+                med_exploratory_reads=5.0, med_total_tool_calls=10.0,
+                med_failed_test_cycles=2.0, med_elapsed_seconds=70.0,
+                med_tokens=1500.0,
+            ),
+        }
+        deltas = compute_paired_deltas(sums, ["T1"])
+        d = next(d for d in deltas if d.comparator_arm == "placebo")
+        assert d.med_delta_tokens == pytest.approx(800.0 - 1500.0)  # -700.0
+
+    def test_tokens_delta_none_when_retrieved_has_no_successes(self):
+        """If retrieved has no successful runs, med_delta_tokens is None."""
+        sums = {
+            ("T1", "retrieved"): ArmSummary(
+                task_id="T1", arm="retrieved",
+                n_runs=3, n_success=0, success_rate=0.0,
+                med_exploratory_reads=None, med_total_tool_calls=None,
+                med_failed_test_cycles=None, med_elapsed_seconds=None,
+                med_tokens=None,  # no successes → None
+            ),
+            ("T1", "empty"): ArmSummary(
+                task_id="T1", arm="empty",
+                n_runs=3, n_success=2, success_rate=0.67,
+                med_exploratory_reads=6.0, med_total_tool_calls=12.0,
+                med_failed_test_cycles=2.0, med_elapsed_seconds=70.0,
+                med_tokens=1200.0,
+            ),
+            ("T1", "static_generic"): ArmSummary(
+                task_id="T1", arm="static_generic",
+                n_runs=3, n_success=0, success_rate=0.0,
+                med_exploratory_reads=None, med_total_tool_calls=None,
+                med_failed_test_cycles=None, med_elapsed_seconds=None,
+                med_tokens=None,
+            ),
+            ("T1", "placebo"): ArmSummary(
+                task_id="T1", arm="placebo",
+                n_runs=3, n_success=0, success_rate=0.0,
+                med_exploratory_reads=None, med_total_tool_calls=None,
+                med_failed_test_cycles=None, med_elapsed_seconds=None,
+                med_tokens=None,
+            ),
+        }
+        deltas = compute_paired_deltas(sums, ["T1"])
+        d = next(d for d in deltas if d.comparator_arm == "empty")
+        assert d.med_delta_tokens is None
+
 
 # ---------------------------------------------------------------------------
 # compute_falsifiable_checks
