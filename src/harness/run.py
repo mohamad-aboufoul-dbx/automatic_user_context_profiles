@@ -1054,12 +1054,33 @@ def run_one(
         # If the key is absent, fall through to the module-level constants so the
         # fallback is real (not bypassed).  T1_ORACLE_COMMIT / T1_ORACLE_FIXTURE_PATH
         # are the live authoritative defaults.
+        #
+        # Two oracle-sourcing modes (checked in priority order):
+        #   1. fixture_repo_path: read the relaxed oracle from this eval repo.
+        #      target_path says where to write it in the worktree.
+        #   2. source_commit (legacy): git-show from the platform repo commit.
+        #      fixture_path serves as both source path and worktree target.
         if task_id == "T1":
             oracle_spec = task_def.get("acceptance_oracle", {})
-            _oracle_commit = oracle_spec.get("source_commit", T1_ORACLE_COMMIT)
-            _oracle_fixture = oracle_spec.get("fixture_path", T1_ORACLE_FIXTURE_PATH)
-            oracle_content = _get_oracle(platform_repo, _oracle_commit, _oracle_fixture)
-            oracle_path = os.path.join(worktree_path, _oracle_fixture)
+
+            if "fixture_repo_path" in oracle_spec:
+                # Mode 1: repo-fixture — read relaxed oracle from the eval repo.
+                # run.py lives at src/harness/run.py; repo root is two levels up.
+                _fixture_relpath = oracle_spec["fixture_repo_path"]
+                _oracle_target = oracle_spec.get("target_path", T1_ORACLE_FIXTURE_PATH)
+                _eval_repo_root = os.path.dirname(
+                    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                )
+                _fixture_abs = os.path.join(_eval_repo_root, _fixture_relpath)
+                with open(_fixture_abs, "r", encoding="utf-8") as fh:
+                    oracle_content = fh.read()
+            else:
+                # Mode 2: legacy git-show from platform repo commit (fallback).
+                _oracle_commit = oracle_spec.get("source_commit", T1_ORACLE_COMMIT)
+                _oracle_target = oracle_spec.get("fixture_path", T1_ORACLE_FIXTURE_PATH)
+                oracle_content = _get_oracle(platform_repo, _oracle_commit, _oracle_target)
+
+            oracle_path = os.path.join(worktree_path, _oracle_target)
             os.makedirs(os.path.dirname(oracle_path), exist_ok=True)
             with open(oracle_path, "w", encoding="utf-8") as fh:
                 fh.write(oracle_content)

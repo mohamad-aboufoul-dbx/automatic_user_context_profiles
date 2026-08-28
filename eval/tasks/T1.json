@@ -26,9 +26,10 @@
   "max_minutes": 30,
   "max_tool_calls": 120,
   "acceptance_oracle": {
-    "source_commit": "98b8bd7",
-    "fixture_path": "tests/unit/test_image_selection_auto_k.py",
-    "note": "reference suite injected read-only at eval time; kept out of agent context"
+    "fixture_repo_path": "eval/oracles/T1_public_oracle.py",
+    "target_path": "tests/unit/test_image_selection_auto_k.py",
+    "test_count": 29,
+    "derivation": "relaxed public-API subset of platform 98b8bd7 oracle (human decision 2026-08-28)"
   },
-  "task_definition_hash": "8e7a2c8d9c59af6c420f31ac4af59a9cde6e9b6a5c1d99dc6f2c1d66bad422dd"
+  "task_definition_hash": "95946d7125adeca4aa4e5173f657280211247ca26a55f5c7cadec437a06e9ae6"
 }

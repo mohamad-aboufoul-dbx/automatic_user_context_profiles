@@ -1283,6 +1283,370 @@ class TestRunOneT1Oracle:
 
 
 # ---------------------------------------------------------------------------
+# Tests: run_one — T1 oracle repo-fixture sourcing (Task 05 / oracle relaxation)
+# ---------------------------------------------------------------------------
+
+class TestRunOneT1OracleRepoFixture:
+    """Tests for the repo-fixture oracle-sourcing mode added in oracle-relaxation task.
+
+    When acceptance_oracle contains ``fixture_repo_path``, run_one must:
+      - Read the oracle from the eval repo file (not via get_oracle_fn).
+      - Write it to the worktree at ``target_path`` AFTER the agent returns.
+      - NOT call get_oracle_fn at all (that is the legacy git-show path).
+    """
+
+    def test_repo_fixture_mode_reads_from_eval_repo(
+        self, fake_git_repo, canned_artifact, canned_task_def
+    ):
+        """fixture_repo_path → oracle content comes from the eval repo file, not git-show."""
+        platform_repo, _ = fake_git_repo
+        sentinel = canned_artifact["sentinel"]
+        oracle_target = "tests/unit/test_image_selection_auto_k.py"
+
+        # Track whether the legacy get_oracle_fn was called
+        legacy_oracle_calls = []
+
+        def should_not_be_called(repo, commit, path):
+            legacy_oracle_calls.append((repo, commit, path))
+            return "# should not reach here\n"
+
+        task_def_fixture = {
+            **canned_task_def,
+            "task_id": "T1",
+            "acceptance_oracle": {
+                "fixture_repo_path": "eval/oracles/T1_public_oracle.py",
+                "target_path": oracle_target,
+                "test_count": 29,
+                "derivation": "test",
+            },
+        }
+
+        worktree_captured = {}
+
+        def stub_agent(worktree, prompt, model, *, max_minutes, max_tool_calls):
+            worktree_captured["path"] = worktree
+            return _make_agent_result(sentinel=sentinel)
+
+        run_one(
+            task_def=task_def_fixture,
+            arm="retrieved",
+            repeat=1,
+            artifact=canned_artifact,
+            platform_repo=platform_repo,
+            run_agent_fn=stub_agent,
+            write_row_fn=_noop_write,
+            upload_fn=_noop_upload,
+            get_oracle_fn=should_not_be_called,
+        )
+
+        # Legacy git-show must NOT be called in fixture_repo_path mode
+        assert len(legacy_oracle_calls) == 0, (
+            "get_oracle_fn (git-show path) must not be called when fixture_repo_path is set"
+        )
+
+        # Oracle must have been written to the worktree
+        worktree = worktree_captured["path"]
+        # Worktree is cleaned up by run_one, so we can't check post-cleanup.
+        # Instead we verify oracle_target was written by checking acceptance ran OK
+        # (a more direct check is done in the next test).
+
+    def test_repo_fixture_oracle_not_present_during_agent_run(
+        self, fake_git_repo, canned_artifact, canned_task_def
+    ):
+        """Contamination invariant: fixture oracle written AFTER agent, not before."""
+        platform_repo, _ = fake_git_repo
+        sentinel = canned_artifact["sentinel"]
+        oracle_target = "tests/unit/test_image_selection_auto_k.py"
+
+        task_def_fixture = {
+            **canned_task_def,
+            "task_id": "T1",
+            "acceptance_oracle": {
+                "fixture_repo_path": "eval/oracles/T1_public_oracle.py",
+                "target_path": oracle_target,
+                "test_count": 29,
+                "derivation": "test",
+            },
+        }
+
+        oracle_during_run = {}
+
+        def stub_agent(worktree, prompt, model, *, max_minutes, max_tool_calls):
+            oracle_path = os.path.join(worktree, oracle_target)
+            oracle_during_run["exists"] = os.path.exists(oracle_path)
+            return _make_agent_result(sentinel=sentinel)
+
+        run_one(
+            task_def=task_def_fixture,
+            arm="retrieved",
+            repeat=1,
+            artifact=canned_artifact,
+            platform_repo=platform_repo,
+            run_agent_fn=stub_agent,
+            write_row_fn=_noop_write,
+            upload_fn=_noop_upload,
+            get_oracle_fn=_noop_oracle,
+        )
+
+        assert oracle_during_run["exists"] is False, (
+            "Oracle must NOT be present during agent run (contamination invariant)"
+        )
+
+    def test_repo_fixture_oracle_written_at_acceptance(
+        self, fake_git_repo, canned_artifact, canned_task_def
+    ):
+        """Oracle IS present in the worktree when acceptance command runs."""
+        platform_repo, _ = fake_git_repo
+        sentinel = canned_artifact["sentinel"]
+        oracle_target = "tests/unit/test_image_selection_auto_k.py"
+
+        task_def_fixture = {
+            **canned_task_def,
+            "task_id": "T1",
+            "acceptance_oracle": {
+                "fixture_repo_path": "eval/oracles/T1_public_oracle.py",
+                "target_path": oracle_target,
+                "test_count": 29,
+                "derivation": "test",
+            },
+        }
+
+        worktree_captured = {}
+        acceptance_oracle_exists = []
+
+        def stub_agent(worktree, prompt, model, *, max_minutes, max_tool_calls):
+            worktree_captured["path"] = worktree
+            return _make_agent_result(sentinel=sentinel)
+
+        def spy_run_cmd(cmd, cwd, timeout=120):
+            if "path" in worktree_captured:
+                exists = os.path.exists(
+                    os.path.join(worktree_captured["path"], oracle_target)
+                )
+                acceptance_oracle_exists.append(exists)
+            import subprocess as sp
+            r = sp.run(cmd, shell=True, cwd=cwd, capture_output=True, text=True)
+            return r.returncode == 0, r.stdout + r.stderr
+
+        with patch("harness.run._run_cmd", side_effect=spy_run_cmd):
+            run_one(
+                task_def=task_def_fixture,
+                arm="retrieved",
+                repeat=1,
+                artifact=canned_artifact,
+                platform_repo=platform_repo,
+                run_agent_fn=stub_agent,
+                write_row_fn=_noop_write,
+                upload_fn=_noop_upload,
+                get_oracle_fn=_noop_oracle,
+            )
+
+        assert len(acceptance_oracle_exists) >= 1
+        assert acceptance_oracle_exists[0] is True, (
+            "Oracle must exist in worktree when acceptance command runs"
+        )
+
+    def test_repo_fixture_content_matches_eval_repo_file(
+        self, fake_git_repo, canned_artifact, canned_task_def, tmp_path
+    ):
+        """Content written to worktree matches the eval repo oracle file verbatim."""
+        platform_repo, _ = fake_git_repo
+        sentinel = canned_artifact["sentinel"]
+        oracle_target = "tests/unit/test_image_selection_auto_k.py"
+
+        # Read the actual oracle fixture content
+        import os as _os
+        eval_repo_root = _os.path.dirname(
+            _os.path.dirname(_os.path.dirname(_os.path.abspath(
+                __import__("harness.run", fromlist=["run"]).__file__
+            )))
+        )
+        fixture_abs = _os.path.join(eval_repo_root, "eval/oracles/T1_public_oracle.py")
+        with open(fixture_abs, "r", encoding="utf-8") as fh:
+            expected_content = fh.read()
+
+        task_def_fixture = {
+            **canned_task_def,
+            "task_id": "T1",
+            "acceptance_oracle": {
+                "fixture_repo_path": "eval/oracles/T1_public_oracle.py",
+                "target_path": oracle_target,
+                "test_count": 29,
+                "derivation": "test",
+            },
+        }
+
+        content_at_acceptance = []
+
+        def stub_agent(worktree, prompt, model, *, max_minutes, max_tool_calls):
+            return _make_agent_result(sentinel=sentinel)
+
+        def spy_run_cmd(cmd, cwd, timeout=120):
+            oracle_path = _os.path.join(cwd, oracle_target)
+            if _os.path.exists(oracle_path):
+                with open(oracle_path, "r", encoding="utf-8") as f:
+                    content_at_acceptance.append(f.read())
+            import subprocess as sp
+            r = sp.run(cmd, shell=True, cwd=cwd, capture_output=True, text=True)
+            return r.returncode == 0, r.stdout + r.stderr
+
+        with patch("harness.run._run_cmd", side_effect=spy_run_cmd):
+            run_one(
+                task_def=task_def_fixture,
+                arm="retrieved",
+                repeat=1,
+                artifact=canned_artifact,
+                platform_repo=platform_repo,
+                run_agent_fn=stub_agent,
+                write_row_fn=_noop_write,
+                upload_fn=_noop_upload,
+                get_oracle_fn=_noop_oracle,
+            )
+
+        assert len(content_at_acceptance) >= 1, "Oracle must be present at acceptance"
+        assert content_at_acceptance[0] == expected_content, (
+            "Oracle content in worktree must match eval/oracles/T1_public_oracle.py verbatim"
+        )
+
+    def test_repo_fixture_not_in_agent_diff(
+        self, fake_git_repo, canned_artifact, canned_task_def
+    ):
+        """Oracle file (fixture_repo_path mode) must not appear in the captured agent diff."""
+        platform_repo, _ = fake_git_repo
+        sentinel = canned_artifact["sentinel"]
+        oracle_target = "tests/unit/test_image_selection_auto_k.py"
+
+        task_def_fixture = {
+            **canned_task_def,
+            "task_id": "T1",
+            "acceptance_oracle": {
+                "fixture_repo_path": "eval/oracles/T1_public_oracle.py",
+                "target_path": oracle_target,
+                "test_count": 29,
+                "derivation": "test",
+            },
+        }
+
+        uploads: dict[str, str] = {}
+
+        def recording_upload(local, vol, profile):
+            with open(local) as f:
+                uploads[vol] = f.read()
+
+        def stub_agent(worktree, prompt, model, *, max_minutes, max_tool_calls):
+            return _make_agent_result(sentinel=sentinel)
+
+        run_one(
+            task_def=task_def_fixture,
+            arm="retrieved",
+            repeat=1,
+            artifact=canned_artifact,
+            platform_repo=platform_repo,
+            run_agent_fn=stub_agent,
+            write_row_fn=_noop_write,
+            upload_fn=recording_upload,
+            get_oracle_fn=_noop_oracle,
+        )
+
+        diff_key = next((k for k in uploads if k.endswith("final.diff")), None)
+        assert diff_key is not None, "final.diff must be uploaded"
+        diff_text = uploads[diff_key]
+
+        # Oracle target must NOT appear in the agent diff (captured before oracle write)
+        assert oracle_target not in diff_text, (
+            f"Oracle target {oracle_target!r} must not appear in agent diff "
+            f"(capture must happen before oracle write)"
+        )
+
+    def test_source_commit_fallback_calls_get_oracle_fn(
+        self, fake_git_repo, canned_artifact, canned_task_def
+    ):
+        """Legacy source_commit mode: get_oracle_fn is called with correct commit + path."""
+        platform_repo, _ = fake_git_repo
+        sentinel = canned_artifact["sentinel"]
+        oracle_fixture_path = "tests/unit/test_image_selection_auto_k.py"
+
+        legacy_calls = []
+
+        def capture_oracle(repo, commit, path):
+            legacy_calls.append({"repo": repo, "commit": commit, "path": path})
+            return "# legacy oracle\ndef test_legacy(): pass\n"
+
+        task_def_legacy = {
+            **canned_task_def,
+            "task_id": "T1",
+            "acceptance_oracle": {
+                "source_commit": "98b8bd7",
+                "fixture_path": oracle_fixture_path,
+                "note": "legacy source_commit mode",
+            },
+        }
+
+        def stub_agent(worktree, prompt, model, *, max_minutes, max_tool_calls):
+            return _make_agent_result(sentinel=sentinel)
+
+        run_one(
+            task_def=task_def_legacy,
+            arm="retrieved",
+            repeat=1,
+            artifact=canned_artifact,
+            platform_repo=platform_repo,
+            run_agent_fn=stub_agent,
+            write_row_fn=_noop_write,
+            upload_fn=_noop_upload,
+            get_oracle_fn=capture_oracle,
+        )
+
+        assert len(legacy_calls) == 1, "get_oracle_fn must be called in source_commit mode"
+        assert legacy_calls[0]["commit"] == "98b8bd7"
+        assert legacy_calls[0]["path"] == oracle_fixture_path
+
+    def test_source_commit_fallback_not_called_when_fixture_repo_path_present(
+        self, fake_git_repo, canned_artifact, canned_task_def
+    ):
+        """fixture_repo_path takes priority: get_oracle_fn never called even if source_commit present."""
+        platform_repo, _ = fake_git_repo
+        sentinel = canned_artifact["sentinel"]
+
+        legacy_calls = []
+
+        def should_not_be_called(repo, commit, path):
+            legacy_calls.append((repo, commit, path))
+            return "# should not be called\n"
+
+        # Oracle spec has BOTH fixture_repo_path AND source_commit — fixture_repo_path wins
+        task_def_both = {
+            **canned_task_def,
+            "task_id": "T1",
+            "acceptance_oracle": {
+                "fixture_repo_path": "eval/oracles/T1_public_oracle.py",
+                "target_path": "tests/unit/test_image_selection_auto_k.py",
+                "source_commit": "98b8bd7",  # present but must be ignored
+                "test_count": 29,
+            },
+        }
+
+        def stub_agent(worktree, prompt, model, *, max_minutes, max_tool_calls):
+            return _make_agent_result(sentinel=sentinel)
+
+        run_one(
+            task_def=task_def_both,
+            arm="retrieved",
+            repeat=1,
+            artifact=canned_artifact,
+            platform_repo=platform_repo,
+            run_agent_fn=stub_agent,
+            write_row_fn=_noop_write,
+            upload_fn=_noop_upload,
+            get_oracle_fn=should_not_be_called,
+        )
+
+        assert len(legacy_calls) == 0, (
+            "fixture_repo_path must take priority; get_oracle_fn must not be called"
+        )
+
+
+# ---------------------------------------------------------------------------
 # Tests: _check_forbidden_unchanged
 # ---------------------------------------------------------------------------
 
