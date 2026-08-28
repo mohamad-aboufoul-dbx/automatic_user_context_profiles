@@ -58,7 +58,11 @@ AGENT_NAME = "claude-code"
 # override via model= parameter in run_one/run_matrix.
 DEFAULT_MODEL = "databricks-claude-sonnet-4-5"
 
-# T1 oracle spec (contamination trust anchor: keep oracle OUT of agent context)
+# T1 oracle spec (contamination trust anchor: keep oracle OUT of agent context).
+# These are the AUTHORITATIVE fallback defaults used when task_def["acceptance_oracle"]
+# omits source_commit / fixture_path.  run_one reads oracle_spec.get("source_commit",
+# T1_ORACLE_COMMIT) and oracle_spec.get("fixture_path", T1_ORACLE_FIXTURE_PATH) so both
+# constants are live — changing them here changes eval behaviour.
 T1_ORACLE_COMMIT = "98b8bd7"
 T1_ORACLE_FIXTURE_PATH = "tests/unit/test_image_selection_auto_k.py"
 
@@ -655,6 +659,67 @@ def run_agent(
 
 
 # ---------------------------------------------------------------------------
+# Shared upload helper (called from success path AND budget-breach paths)
+# ---------------------------------------------------------------------------
+
+def _upload_run_artifacts(
+    run_id: str,
+    trace: list[dict],
+    worktree_path: str,
+    starting_commit: str,
+    runs_volume_base: str,
+    profile: str,
+    upload_fn: Callable,
+) -> tuple[Optional[str], Optional[str]]:
+    """Upload transcript.jsonl and final.diff to the UC Volume.
+
+    Returns ``(trace_path, final_diff_path)`` on success, or ``(None, None)``
+    if the upload fails.  Upload failure is NON-FATAL but prints a visible
+    warning including the run_id so it is detectable in run logs.
+
+    Called from both the success path and every budget-breach early-return so
+    that partial traces from breached runs are preserved for debugging.
+    """
+    trace_path: Optional[str] = None
+    final_diff_path: Optional[str] = None
+
+    trace_jsonl = "\n".join(json.dumps(e) for e in trace) + "\n"
+    final_diff = _get_final_diff(worktree_path, starting_commit)
+
+    tmp_trace: Optional[str] = None
+    tmp_diff: Optional[str] = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False) as f:
+            f.write(trace_jsonl)
+            tmp_trace = f.name
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".diff", delete=False) as f:
+            f.write(final_diff)
+            tmp_diff = f.name
+
+        vol_trace = f"{runs_volume_base}/{run_id}/transcript.jsonl"
+        vol_diff = f"{runs_volume_base}/{run_id}/final.diff"
+        upload_fn(tmp_trace, vol_trace, profile)
+        upload_fn(tmp_diff, vol_diff, profile)
+        trace_path = vol_trace
+        final_diff_path = vol_diff
+    except Exception as exc:
+        print(
+            f"[run_one] WARNING: artifact upload failed for run_id={run_id}: {exc}",
+            flush=True,
+        )
+        # trace_path / final_diff_path stay None; failure is observable in logs
+    finally:
+        for p in (tmp_trace, tmp_diff):
+            if p:
+                try:
+                    os.unlink(p)
+                except OSError:
+                    pass
+
+    return trace_path, final_diff_path
+
+
+# ---------------------------------------------------------------------------
 # Core per-run orchestration
 # ---------------------------------------------------------------------------
 
@@ -728,6 +793,12 @@ def run_one(
         input_tokens_val: Optional[int] = None,
         output_tokens_val: Optional[int] = None,
         final_commit: Optional[str] = None,
+        # Honest forbidden-files value: True when nothing ran (pre-agent abort);
+        # caller passes the real computed value for budget-breach rows where the
+        # agent DID run and may have committed changes.
+        forbidden_files_unchanged_val: bool = True,
+        trace_path: Optional[str] = None,
+        final_diff_path: Optional[str] = None,
     ) -> EvalRunRow:
         return EvalRunRow(
             run_id=run_id,
@@ -746,15 +817,15 @@ def run_one(
             success=False,
             acceptance_tests_passed=False,
             regression_tests_passed=None,
-            forbidden_files_unchanged=False,
+            forbidden_files_unchanged=forbidden_files_unchanged_val,
             elapsed_seconds=elapsed_seconds,
             total_tool_calls=total_tool_calls_val,
             exploratory_reads_before_edit=None,
             failed_test_cycles=None,
             input_tokens=input_tokens_val,
             output_tokens=output_tokens_val,
-            trace_path=None,
-            final_diff_path=None,
+            trace_path=trace_path,
+            final_diff_path=final_diff_path,
             failure_reason=failure_reason,
             started_at=started_at,
             completed_at=datetime.now(timezone.utc),
@@ -785,7 +856,12 @@ def run_one(
         # ── Step 3: pre-run sha integrity check ────────────────────────────
         actual_sha = hashlib.sha256(open(staged_path, "rb").read()).hexdigest()
         if actual_sha != file_sha256:
-            row = _make_failure_row("integrity_failure")
+            # Agent never ran — worktree is clean at starting_commit.
+            # forbidden_files_unchanged=True is honest: nothing could have changed.
+            row = _make_failure_row(
+                "integrity_failure",
+                forbidden_files_unchanged_val=True,
+            )
             _write_row(row, warehouse_id, profile)
             return row
 
@@ -804,8 +880,18 @@ def run_one(
             agent_result.agent_echo, sentinel, staged_path, file_sha256
         )
 
-        # ── Step 6: budget breach → record and return ───────────────────────
+        # ── Step 6: budget breach → record what we have and return ──────────
+        # The agent DID run for both budget-breach kinds, so we COMPUTE the real
+        # forbidden-files state from git and UPLOAD whatever partial trace+diff
+        # exists — exactly the data you'd need to diagnose a breached run.
         if agent_result.stopped_reason == "budget_minutes":
+            _forbidden_ok = _check_forbidden_unchanged(
+                worktree_path, starting_commit, forbidden_files
+            )
+            _trace_path, _diff_path = _upload_run_artifacts(
+                run_id, agent_result.trace, worktree_path, starting_commit,
+                runs_volume_base, profile, _upload,
+            )
             row = _make_failure_row(
                 "budget_minutes",
                 sentinel_observed=sentinel_observed,
@@ -815,11 +901,21 @@ def run_one(
                 input_tokens_val=agent_result.tokens_in,
                 output_tokens_val=agent_result.tokens_out,
                 final_commit=agent_result.final_commit,
+                forbidden_files_unchanged_val=_forbidden_ok,
+                trace_path=_trace_path,
+                final_diff_path=_diff_path,
             )
             _write_row(row, warehouse_id, profile)
             return row
 
         if agent_result.total_tool_calls > max_tool_calls:
+            _forbidden_ok = _check_forbidden_unchanged(
+                worktree_path, starting_commit, forbidden_files
+            )
+            _trace_path, _diff_path = _upload_run_artifacts(
+                run_id, agent_result.trace, worktree_path, starting_commit,
+                runs_volume_base, profile, _upload,
+            )
             row = _make_failure_row(
                 "budget_tool_calls",
                 sentinel_observed=sentinel_observed,
@@ -829,6 +925,9 @@ def run_one(
                 input_tokens_val=agent_result.tokens_in,
                 output_tokens_val=agent_result.tokens_out,
                 final_commit=agent_result.final_commit,
+                forbidden_files_unchanged_val=_forbidden_ok,
+                trace_path=_trace_path,
+                final_diff_path=_diff_path,
             )
             _write_row(row, warehouse_id, profile)
             return row
@@ -836,14 +935,14 @@ def run_one(
         # ── Step 7: T1 oracle overwrite (BEFORE acceptance) ─────────────────
         # Contamination invariant: oracle is kept OUT of agent context during run;
         # written only here, after the run completes.
+        # T1_ORACLE_COMMIT / T1_ORACLE_FIXTURE_PATH are the live fallback defaults
+        # when the task_def's acceptance_oracle omits either field.
         if task_id == "T1" and "acceptance_oracle" in task_def:
             oracle_spec = task_def["acceptance_oracle"]
-            oracle_content = _get_oracle(
-                platform_repo,
-                oracle_spec["source_commit"],
-                oracle_spec["fixture_path"],
-            )
-            oracle_path = os.path.join(worktree_path, oracle_spec["fixture_path"])
+            _oracle_commit = oracle_spec.get("source_commit", T1_ORACLE_COMMIT)
+            _oracle_fixture = oracle_spec.get("fixture_path", T1_ORACLE_FIXTURE_PATH)
+            oracle_content = _get_oracle(platform_repo, _oracle_commit, _oracle_fixture)
+            oracle_path = os.path.join(worktree_path, _oracle_fixture)
             os.makedirs(os.path.dirname(oracle_path), exist_ok=True)
             with open(oracle_path, "w", encoding="utf-8") as fh:
                 fh.write(oracle_content)
@@ -869,41 +968,11 @@ def run_one(
         exp_reads = exploratory_reads_before_edit(trace, required_files)
         fail_cycles = failed_test_cycles(trace)
 
-        # ── Step 10: upload trace + diff (non-fatal if upload fails) ─────────
-        trace_path: Optional[str] = None
-        final_diff_path: Optional[str] = None
-
-        trace_jsonl = "\n".join(json.dumps(e) for e in trace) + "\n"
-        final_diff = _get_final_diff(worktree_path, starting_commit)
-
-        tmp_trace = tmp_diff = None
-        try:
-            with tempfile.NamedTemporaryFile(
-                mode="w", suffix=".jsonl", delete=False
-            ) as f:
-                f.write(trace_jsonl)
-                tmp_trace = f.name
-            with tempfile.NamedTemporaryFile(
-                mode="w", suffix=".diff", delete=False
-            ) as f:
-                f.write(final_diff)
-                tmp_diff = f.name
-
-            vol_trace = f"{runs_volume_base}/{run_id}/transcript.jsonl"
-            vol_diff = f"{runs_volume_base}/{run_id}/final.diff"
-            _upload(tmp_trace, vol_trace, profile)
-            _upload(tmp_diff, vol_diff, profile)
-            trace_path = vol_trace
-            final_diff_path = vol_diff
-        except Exception:
-            pass  # upload failure is non-fatal; paths stay None
-        finally:
-            for p in [tmp_trace, tmp_diff]:
-                if p:
-                    try:
-                        os.unlink(p)
-                    except OSError:
-                        pass
+        # ── Step 10: upload trace + diff via shared helper ───────────────────
+        trace_path, final_diff_path = _upload_run_artifacts(
+            run_id, trace, worktree_path, starting_commit,
+            runs_volume_base, profile, _upload,
+        )
 
         # ── Step 11: assemble and write eval_runs row ────────────────────────
         completed_at = datetime.now(timezone.utc)

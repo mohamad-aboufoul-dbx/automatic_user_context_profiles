@@ -25,6 +25,8 @@ from unittest.mock import patch
 import pytest
 
 from harness.run import (
+    T1_ORACLE_COMMIT,
+    T1_ORACLE_FIXTURE_PATH,
     AgentRunResult,
     EvalRunRow,
     _build_insert_sql,
@@ -692,6 +694,46 @@ class TestRunOneSuccessCombos:
 
 
 # ---------------------------------------------------------------------------
+# Tests: run_one — sha-mismatch abort: forbidden_files_unchanged is honest
+# ---------------------------------------------------------------------------
+
+class TestRunOneShaMismatchForbidden:
+    """Fix 2: integrity_failure rows must record forbidden_files_unchanged=True."""
+
+    def test_integrity_failure_sets_forbidden_unchanged_true(
+        self, fake_git_repo, canned_task_def
+    ):
+        """Nothing ran → files are unchanged → forbidden_files_unchanged must be True."""
+        platform_repo, _ = fake_git_repo
+
+        bad_artifact = {
+            "artifact_id": "art-bad",
+            "task_id": "T1",
+            "arm": "retrieved",
+            "file_sha256": "c" * 64,  # wrong sha
+            "sentinel": "mem-bad",
+            "memory_markdown": "# MEMORY\nsome content\n",
+            "volume_path": "/Volumes/.../MEMORY.md",
+        }
+
+        row = run_one(
+            task_def=canned_task_def,
+            arm="retrieved",
+            repeat=1,
+            artifact=bad_artifact,
+            platform_repo=platform_repo,
+            run_agent_fn=lambda *a, **kw: (_ for _ in ()).throw(AssertionError("agent must not run")),
+            write_row_fn=_noop_write,
+            upload_fn=_noop_upload,
+        )
+
+        assert row.failure_reason == "integrity_failure"
+        assert row.forbidden_files_unchanged is True, (
+            "integrity_failure: agent never ran so forbidden files are unchanged"
+        )
+
+
+# ---------------------------------------------------------------------------
 # Tests: run_one — budget breach
 # ---------------------------------------------------------------------------
 
@@ -753,6 +795,216 @@ class TestRunOneBudget:
         assert row.failure_reason == "budget_tool_calls"
         assert row.success is False
         assert row.total_tool_calls == 200
+
+    def test_budget_minutes_forbidden_unchanged_honest_no_commits(
+        self, fake_git_repo, canned_artifact, canned_task_def
+    ):
+        """Fix 2: budget_minutes row with no committed changes → forbidden_files_unchanged=True."""
+        platform_repo, _ = fake_git_repo
+
+        def stub_timeout(worktree, prompt, model, *, max_minutes, max_tool_calls):
+            # Agent timed out without committing anything
+            return _make_agent_result(stopped_reason="budget_minutes", final_commit=None)
+
+        row = run_one(
+            task_def=canned_task_def,
+            arm="retrieved",
+            repeat=1,
+            artifact=canned_artifact,
+            platform_repo=platform_repo,
+            run_agent_fn=stub_timeout,
+            write_row_fn=_noop_write,
+            upload_fn=_noop_upload,
+        )
+
+        assert row.failure_reason == "budget_minutes"
+        assert row.forbidden_files_unchanged is True
+
+    def test_budget_minutes_forbidden_unchanged_honest_with_commit(
+        self, fake_git_repo, canned_artifact, canned_task_def
+    ):
+        """Fix 2: budget_minutes row where the agent committed a forbidden file → False."""
+        platform_repo, starting_commit = fake_git_repo
+        sentinel = canned_artifact["sentinel"]
+
+        def stub_commits_forbidden(worktree, prompt, model, *, max_minutes, max_tool_calls):
+            # Commit a change to forbidden.py before "timing out"
+            env = {**os.environ, "GIT_AUTHOR_NAME": "T", "GIT_AUTHOR_EMAIL": "t@t.com",
+                   "GIT_COMMITTER_NAME": "T", "GIT_COMMITTER_EMAIL": "t@t.com"}
+            with open(os.path.join(worktree, "forbidden.py"), "w") as f:
+                f.write("bad\n")
+            subprocess.run(["git", "add", "."], cwd=worktree, env=env, capture_output=True)
+            subprocess.run(["git", "commit", "-m", "touch forbidden"],
+                           cwd=worktree, env=env, capture_output=True)
+            return _make_agent_result(
+                sentinel=sentinel, stopped_reason="budget_minutes", final_commit=None
+            )
+
+        row = run_one(
+            task_def=canned_task_def,
+            arm="retrieved",
+            repeat=1,
+            artifact=canned_artifact,
+            platform_repo=platform_repo,
+            run_agent_fn=stub_commits_forbidden,
+            write_row_fn=_noop_write,
+            upload_fn=_noop_upload,
+        )
+
+        assert row.failure_reason == "budget_minutes"
+        assert row.forbidden_files_unchanged is False
+
+    def test_budget_minutes_uploads_partial_trace(
+        self, fake_git_repo, canned_artifact, canned_task_def
+    ):
+        """Fix 3: budget_minutes row gets trace_path and final_diff_path from upload helper."""
+        platform_repo, _ = fake_git_repo
+        sentinel = canned_artifact["sentinel"]
+        uploaded = {}
+
+        def stub_upload(local, vol, profile):
+            uploaded[vol] = local
+
+        def stub_timeout(worktree, prompt, model, *, max_minutes, max_tool_calls):
+            return AgentRunResult(
+                trace=[{"type": "read", "target": "a.py"}],
+                agent_echo=f"ack {sentinel}",
+                total_tool_calls=2,
+                tokens_in=10,
+                tokens_out=5,
+                elapsed_seconds=1800.0,
+                final_commit=None,
+                exit_code=-1,
+                stopped_reason="budget_minutes",
+            )
+
+        row = run_one(
+            task_def=canned_task_def,
+            arm="retrieved",
+            repeat=1,
+            artifact=canned_artifact,
+            platform_repo=platform_repo,
+            run_agent_fn=stub_timeout,
+            write_row_fn=_noop_write,
+            upload_fn=stub_upload,
+        )
+
+        assert row.failure_reason == "budget_minutes"
+        # Both paths should be populated now that we upload from budget-breach paths
+        assert row.trace_path is not None
+        assert row.final_diff_path is not None
+        assert row.trace_path.endswith("transcript.jsonl")
+        assert row.final_diff_path.endswith("final.diff")
+        # Verify the upload was actually called
+        assert any("transcript.jsonl" in k for k in uploaded)
+        assert any("final.diff" in k for k in uploaded)
+
+    def test_budget_tool_calls_uploads_partial_trace(
+        self, fake_git_repo, canned_artifact, canned_task_def
+    ):
+        """Fix 3: budget_tool_calls row gets trace_path and final_diff_path."""
+        platform_repo, _ = fake_git_repo
+        sentinel = canned_artifact["sentinel"]
+        uploaded = {}
+
+        def stub_upload(local, vol, profile):
+            uploaded[vol] = local
+
+        def stub_over_budget(worktree, prompt, model, *, max_minutes, max_tool_calls):
+            return AgentRunResult(
+                trace=[{"type": "edit", "target": "src/foo.py"}],
+                agent_echo=f"ack {sentinel}",
+                total_tool_calls=200,
+                tokens_in=500,
+                tokens_out=100,
+                elapsed_seconds=5.0,
+                final_commit="deadbeef",
+                exit_code=0,
+                stopped_reason="agent_exit",
+            )
+
+        row = run_one(
+            task_def=canned_task_def,
+            arm="retrieved",
+            repeat=1,
+            artifact=canned_artifact,
+            platform_repo=platform_repo,
+            run_agent_fn=stub_over_budget,
+            write_row_fn=_noop_write,
+            upload_fn=stub_upload,
+        )
+
+        assert row.failure_reason == "budget_tool_calls"
+        assert row.trace_path is not None
+        assert row.final_diff_path is not None
+
+    def test_upload_failure_prints_warning_with_run_id(
+        self, fake_git_repo, canned_artifact, canned_task_def, capsys
+    ):
+        """Fix 3: upload failure is non-fatal but prints a visible warning with run_id."""
+        platform_repo, _ = fake_git_repo
+        sentinel = canned_artifact["sentinel"]
+
+        def exploding_upload(local, vol, profile):
+            raise RuntimeError("connection refused")
+
+        def stub_timeout(worktree, prompt, model, *, max_minutes, max_tool_calls):
+            return _make_agent_result(stopped_reason="budget_minutes", sentinel=sentinel)
+
+        row = run_one(
+            task_def=canned_task_def,
+            arm="retrieved",
+            repeat=1,
+            artifact=canned_artifact,
+            platform_repo=platform_repo,
+            run_agent_fn=stub_timeout,
+            write_row_fn=_noop_write,
+            upload_fn=exploding_upload,
+        )
+
+        # Upload failure is non-fatal — row still written
+        assert row.failure_reason == "budget_minutes"
+        # Paths stay None on upload failure
+        assert row.trace_path is None
+        assert row.final_diff_path is None
+        # Warning must be printed with run_id and error text
+        captured = capsys.readouterr()
+        assert "WARNING" in captured.out
+        assert row.run_id in captured.out
+        assert "connection refused" in captured.out
+
+    def test_upload_failure_on_success_path_prints_warning(
+        self, fake_git_repo, canned_artifact, canned_task_def, capsys
+    ):
+        """Fix 3: upload failure on the success path also prints a visible warning."""
+        platform_repo, _ = fake_git_repo
+        sentinel = canned_artifact["sentinel"]
+
+        def exploding_upload(local, vol, profile):
+            raise RuntimeError("disk full")
+
+        def stub_agent(worktree, prompt, model, *, max_minutes, max_tool_calls):
+            return _make_agent_result(sentinel=sentinel)
+
+        row = run_one(
+            task_def=canned_task_def,
+            arm="retrieved",
+            repeat=1,
+            artifact=canned_artifact,
+            platform_repo=platform_repo,
+            run_agent_fn=stub_agent,
+            write_row_fn=_noop_write,
+            upload_fn=exploding_upload,
+        )
+
+        # Run still succeeds
+        assert row.success is True
+        # Paths stay None
+        assert row.trace_path is None
+        # Warning printed
+        captured = capsys.readouterr()
+        assert "WARNING" in captured.out
+        assert row.run_id in captured.out
 
 
 # ---------------------------------------------------------------------------
@@ -954,6 +1206,59 @@ class TestRunOneT1Oracle:
         )
 
         assert len(oracle_calls) == 0, "Oracle should not be called for T2"
+
+    def test_oracle_constants_used_as_fallback_defaults(
+        self, fake_git_repo, canned_artifact, canned_task_def
+    ):
+        """Fix 1: T1_ORACLE_COMMIT and T1_ORACLE_FIXTURE_PATH are live fallback defaults.
+
+        When acceptance_oracle omits source_commit / fixture_path, the module
+        constants T1_ORACLE_COMMIT and T1_ORACLE_FIXTURE_PATH must be used.
+        """
+        platform_repo, _ = fake_git_repo
+        sentinel = canned_artifact["sentinel"]
+
+        oracle_calls = []
+
+        def fake_get_oracle(repo, commit, path):
+            oracle_calls.append((commit, path))
+            return "# oracle\ndef test_x(): pass\n"
+
+        # acceptance_oracle with NEITHER source_commit nor fixture_path
+        task_def_minimal_oracle = {
+            **canned_task_def,
+            "task_id": "T1",
+            "acceptance_oracle": {
+                # intentionally empty — should fall back to module constants
+                "note": "minimal oracle spec, no source_commit or fixture_path",
+            },
+        }
+
+        def stub_agent(worktree, prompt, model, *, max_minutes, max_tool_calls):
+            return _make_agent_result(sentinel=sentinel)
+
+        run_one(
+            task_def=task_def_minimal_oracle,
+            arm="retrieved",
+            repeat=1,
+            artifact=canned_artifact,
+            platform_repo=platform_repo,
+            run_agent_fn=stub_agent,
+            write_row_fn=_noop_write,
+            upload_fn=_noop_upload,
+            get_oracle_fn=fake_get_oracle,
+        )
+
+        assert len(oracle_calls) == 1
+        commit_used, path_used = oracle_calls[0]
+        assert commit_used == T1_ORACLE_COMMIT, (
+            f"Expected fallback to T1_ORACLE_COMMIT={T1_ORACLE_COMMIT!r}, "
+            f"got {commit_used!r}"
+        )
+        assert path_used == T1_ORACLE_FIXTURE_PATH, (
+            f"Expected fallback to T1_ORACLE_FIXTURE_PATH={T1_ORACLE_FIXTURE_PATH!r}, "
+            f"got {path_used!r}"
+        )
 
 
 # ---------------------------------------------------------------------------
