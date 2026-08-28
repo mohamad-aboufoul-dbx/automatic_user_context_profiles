@@ -104,3 +104,42 @@ def eligible_sessions(
         if end < cutoff:
             result.append(session)
     return result
+
+
+def unresolved_prefix_ids(
+    banned_ids: set[str] | list[str],
+    real_ids: set[str] | list[str],
+) -> list[str]:
+    """Return banned ids that are a STRICT prefix of a real conversation_id.
+
+    The contamination guards (``eligible_sessions`` and the notebook JOINs)
+    match ``conversation_id`` by **exact equality**.  A banned id that is only
+    a *prefix* of a real conversation_id (e.g. the 8-char ``"02c8e44d"`` stored
+    for the full ``"02c8e44d-07fc-…"`` UUID) therefore never matches and the
+    banned conversation silently leaks through.
+
+    This helper enforces the freeze-time invariant:
+
+        No real conversation_id may have a banned id as a STRICT prefix unless
+        the banned id equals it.
+
+    A banned id that equals a real id (resolved) or that matches nothing in the
+    corpus (harmless — it can never appear) is NOT flagged.
+
+    Args:
+        banned_ids: The banned/excluded conversation ids (heldout ∪ cluster).
+        real_ids:   The distinct conversation_ids present in the raw corpus.
+
+    Returns:
+        Sorted list of banned ids that strict-prefix-match at least one real id
+        without equaling it.  Empty list means every banned id is either an
+        exact match or matches nothing — safe for exact-equality guards.
+    """
+    real_set = set(real_ids)
+    flagged: list[str] = []
+    for bid in banned_ids:
+        if bid in real_set:
+            continue  # exact match — resolved
+        if any(rid != bid and rid.startswith(bid) for rid in real_set):
+            flagged.append(bid)
+    return sorted(flagged)

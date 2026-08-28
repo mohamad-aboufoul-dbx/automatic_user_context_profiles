@@ -88,7 +88,7 @@ print(f"dry_run param = {_dry_raw!r}  ->  DRY_RUN={DRY_RUN}")
 if EXTRACT_SRC_DIR not in sys.path:
     sys.path.insert(0, EXTRACT_SRC_DIR)
 
-from extract.prefilter import eligible_sessions          # noqa: E402
+from extract.prefilter import eligible_sessions, unresolved_prefix_ids  # noqa: E402
 from extract.schema import validate_memory_array, validate_memory, MEMORY_TYPES  # noqa: E402
 from extract.ids import memory_id                         # noqa: E402
 
@@ -217,6 +217,20 @@ print(f"Collected {len(sessions)} sessions to the driver")
 # COMMAND ----------
 
 total_sessions = len(sessions)
+
+# Freeze-time invariant: the guards match conversation_id by EXACT equality, so
+# a banned id that is only a PREFIX of a real conversation_id (e.g. a truncated
+# 8-char id vs. the full UUID) would silently leak through. Fail loudly here
+# before any extraction if any banned id strict-prefix-matches a real id.
+_real_conv_ids = {s["conversation_id"] for s in sessions}
+_unresolved = unresolved_prefix_ids(BANNED_IDS, _real_conv_ids)
+if _unresolved:
+    raise RuntimeError(
+        "CONTAMINATION GUARD MISCONFIGURED: these banned ids are only a PREFIX "
+        f"of a real conversation_id (exact-equality guards will miss them): {_unresolved}. "
+        "Resolve them to full conversation_ids in config/heldout_exclusions.json."
+    )
+
 eligible = eligible_sessions(sessions, CFG, CLUSTER_EXCLUSIONS)
 
 # Breakdown: exclusion drops (id in banned) vs cutoff drops (the remainder that

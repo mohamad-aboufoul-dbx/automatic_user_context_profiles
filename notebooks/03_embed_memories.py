@@ -95,6 +95,8 @@ print(f"dry_run param = {_dry_raw!r}  ->  DRY_RUN={DRY_RUN}")
 if EXTRACT_SRC_DIR not in sys.path:
     sys.path.insert(0, EXTRACT_SRC_DIR)
 
+from extract.prefilter import unresolved_prefix_ids   # noqa: E402
+
 print(f"Added to sys.path: {EXTRACT_SRC_DIR}")
 
 
@@ -308,6 +310,24 @@ observed_dim = dims[0]
 # MAGIC %md ## Contamination re-assert — ZERO held-out/cluster rows in atomic_memories
 
 # COMMAND ----------
+
+# Freeze-time invariant: the JOIN below matches conversation_id by EXACT
+# equality, so a banned id that is only a PREFIX of a real conversation_id would
+# never match and would silently leak. Fail loudly if any banned id strict-
+# prefix-matches a conversation_id actually present in atomic_memories.
+_real_conv_ids = {
+    r["conversation_id"]
+    for r in spark.sql(
+        f"SELECT DISTINCT conversation_id FROM {ATOMIC_TBL}"
+    ).collect()
+}
+_unresolved = unresolved_prefix_ids(BANNED_IDS, _real_conv_ids)
+if _unresolved:
+    raise RuntimeError(
+        "CONTAMINATION GUARD MISCONFIGURED: these banned ids are only a PREFIX "
+        f"of a real conversation_id (exact-equality JOIN will miss them): {_unresolved}. "
+        "Resolve them to full conversation_ids in config/heldout_exclusions.json."
+    )
 
 # Build the banned-id set as a temp view and count matches by join (no string
 # interpolation of ids into SQL). MUST be exactly 0. This guard runs BEFORE any
