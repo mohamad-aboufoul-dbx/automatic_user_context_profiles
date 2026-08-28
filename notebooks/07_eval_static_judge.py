@@ -5,6 +5,10 @@ import json
 import datetime
 import pandas as pd
 
+
+def _s(x):
+    return "" if pd.isna(x) else str(x)
+
 _DEFAULTS = {
     "DRY_RUN": "true",
     "INPUT_TABLE": "ai_fde_hackathon_catalog.automatic_user_context_profiles.chatbot_evaluations_mohamad",
@@ -38,6 +42,7 @@ SYSTEM_PROMPT = (
     '{"coverage_score": <float>, "failure_mode": "<one of the five>", "rationale": "<=2 sentences"}'
 )
 VALID_MODES = {"covers_well", "partial", "too_generic", "off_topic", "wrong_specifics"}
+_RUBRIC = (0.0, 0.25, 0.5, 0.75, 1.0)
 
 
 def decode_profile(profile_used):
@@ -82,6 +87,9 @@ def parse_judge_json(text):
         raise ValueError("unbalanced JSON object in judge output")
     obj = json.loads(s[start:end])
     score = float(obj["coverage_score"])
+    if not (0.0 <= score <= 1.0):
+        raise ValueError(f"coverage_score out of range: {score}")
+    score = min(_RUBRIC, key=lambda s2: abs(s2 - score))
     mode = str(obj.get("failure_mode", "")).strip()
     if mode not in VALID_MODES:
         raise ValueError(f"invalid failure_mode: {mode!r}")
@@ -160,16 +168,24 @@ print(f"rows to score: {len(src)}")
 scored_at = datetime.datetime.now()
 rows = []
 for _, r in src.iterrows():
-    expected = r.get("Expected_elements_in_response") or ""
-    scorer = stub_judge if DRY_RUN else judge_row
-    score, mode, rationale, err = scorer(r.get("Query") or "", expected, r.get("Response") or "")
-    combo, level = decode_profile(r.get("Profile_used"))
-    rows.append({
-        "Username": r.get("Username"), "q_key": int(len(expected)), "Profile_used": r.get("Profile_used"),
-        "data_combo": combo, "profile_level": level, "New_or_old_question": r.get("New_or_old_question"),
-        "coverage_score": score, "failure_mode": mode, "rationale": rationale, "parse_error": err,
-        "judge_endpoint": JUDGE_ENDPOINT, "scored_at": scored_at,
-    })
+    try:
+        expected = _s(r.get("Expected_elements_in_response"))
+        scorer = stub_judge if DRY_RUN else judge_row
+        score, mode, rationale, err = scorer(_s(r.get("Query")), expected, _s(r.get("Response")))
+        combo, level = decode_profile(_s(r.get("Profile_used")))
+        rows.append({
+            "Username": _s(r.get("Username")), "q_key": int(len(expected)), "Profile_used": _s(r.get("Profile_used")),
+            "data_combo": combo, "profile_level": level, "New_or_old_question": _s(r.get("New_or_old_question")),
+            "coverage_score": score, "failure_mode": mode, "rationale": rationale, "parse_error": err,
+            "judge_endpoint": JUDGE_ENDPOINT, "scored_at": scored_at,
+        })
+    except Exception as e:
+        rows.append({
+            "Username": _s(r.get("Username")), "q_key": None, "Profile_used": _s(r.get("Profile_used")),
+            "data_combo": None, "profile_level": None, "New_or_old_question": _s(r.get("New_or_old_question")),
+            "coverage_score": None, "failure_mode": None, "rationale": None, "parse_error": f"row_error: {e}",
+            "judge_endpoint": JUDGE_ENDPOINT, "scored_at": scored_at,
+        })
 
 results = pd.DataFrame(rows, columns=[
     "Username", "q_key", "Profile_used", "data_combo", "profile_level", "New_or_old_question",

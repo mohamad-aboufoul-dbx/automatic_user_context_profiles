@@ -77,4 +77,6 @@ failure_counts = (
 )
 print_table("(e) Failure mode counts by Profile_used", failure_counts)
 
-print("\nCAVEAT: n is tiny (about 3 questions x 5 conditions = 15 rows, zero replicates), so differences are not statistically reliable.")
+n_rows = len(results)
+n_conditions = results["Profile_used"].nunique(dropna=False)
+print(f"\nCAVEAT: n is tiny ({n_rows} rows across {n_conditions} conditions, zero replicates), so differences are not statistically reliable.")
