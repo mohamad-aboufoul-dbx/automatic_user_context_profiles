@@ -1,0 +1,276 @@
+# User: Mohamad Aboufoul
+# Profile: level_3_evidence | Data source: Cold-start only
+# Generated: 2026-08-28T00:40:25.718389
+# Model: databricks-claude-opus-4-8
+# Source: ai_fde_hackathon_catalog.automatic_user_context_profiles.profile_checkpoints_v2
+
+# =============================================================================
+# USER CONTEXT PROFILE — INSTRUCTIONS FOR AGENT
+# =============================================================================
+# The YAML block that follows this prefix is a structured user context profile.
+# It was built incrementally from career metadata, conversation history, and
+# authored documents. Use it to personalize your responses WITHOUT requiring
+# the user to re-explain their background, preferences, or active work.
+#
+# HOW TO USE THIS PROFILE:
+#
+# 1. IDENTITY & CONTEXT
+#    - Refer to the user by name when natural
+#    - Understand their role, team, and tenure to calibrate formality and depth
+#    - Reference their active projects/threads when relevant to the question
+#
+# 2. CAPABILITY SNAPSHOT
+#    - strongest_areas: Skip basic explanations for these topics
+#    - proficient_in: Can handle intermediate discussion without preamble
+#    - developing_in: Explain concepts but respect they have some context
+#    - still_learning: Provide clear explanations, examples, and check understanding
+#
+# 3. INTERACTION GUIDANCE
+#    - Follow the by_task preferences (e.g., "debugging: concise", "learning: adaptive")
+#    - Apply response_pattern_claims — these are TESTED patterns from real interactions
+#    - Respect the preferred_structure and avoid patterns listed under each claim
+#    - When a claim has confidence > 0.8, treat it as a strong preference
+#    - When confidence is 0.5–0.7, treat as a suggestion, not a rule
+#
+# 4. RESPONSE PATTERNS (from interaction_outcomes)
+#    - If the profile lists failure_modes for a task type, AVOID those patterns
+#    - If repair_strategies are listed, APPLY them proactively
+#    - Common failure modes:
+#        buried_answer: Put the direct answer FIRST, details after
+#        too_verbose: Be concise; let the user ask for more
+#        too_basic: Skip fundamentals they already know
+#        wrong_assumption: Check the profile's knowledge section before assuming
+#        missing_example: Include a concrete example when explaining
+#        premature_solutioning: Understand the problem before proposing fixes
+#
+# 5. ACTIVE THREADS & PROJECTS
+#    - If the user's question relates to a listed active_thread, pull in that context
+#    - Reference project goals, stakeholders, and deliverables when helpful
+#    - Don't assume projects listed as 'active' are still active if the evidence is old
+#
+# 6. WHAT NOT TO DO
+#    - Do NOT repeat information the user obviously already knows
+#    - Do NOT over-explain topics listed in strongest_areas or proficient_in
+#    - Do NOT treat career_ladder expectations as proven capabilities
+#    - Do NOT reference the profile explicitly (“your profile says...”)
+#    - Do NOT apply a single scoped preference globally (check the scope field)
+#    - Do NOT ignore low-confidence claims — use them as soft guidance
+#
+# 7. CONFIDENCE INTERPRETATION
+#    - 0.9–1.0: User-confirmed or explicitly stated. Treat as strong.
+#    - 0.7–0.9: Repeated behavior or strong evidence. Default to following it.
+#    - 0.5–0.7: Single observation or career-ladder inference. Soft guidance only.
+#    - < 0.5: Tentative. Don't act on it unless corroborated by the conversation.
+#
+# 8. CHRONOLOGICAL AWARENESS
+#    - More recent evidence (last_seen dates) is more relevant
+#    - Skills and projects can change — respect the temporal markers
+#    - If the user contradicts the profile in this conversation, FOLLOW THE USER
+#
+# =============================================================================
+# USER PROFILE BEGINS BELOW:
+# =============================================================================
+
+evidence_records:
+  - record_id: "cl-baseline-001"
+    kind: "topic_expertise"
+    attribute: "technical.leadership"
+    value: "Expected to define technical direction for customers, including designing, documenting, and implementing end-to-end AI solutions (career ladder expectation, not proven)"
+    scope:
+      products: []
+      task_types: ["technical_leadership", "solution_design"]
+      thread_id: null
+    status: "active"
+    source:
+      type: "career_ladder"
+      reference_id: "AI-FDE-L5-Technical-Leadership"
+      excerpt: "Defines the technical direction for customers, including designing, documenting, and implementing end-to-end AI solutions"
+    inference:
+      method: "career_ladder_baseline"
+      confidence: 0.5
+      user_confirmed: false
+    temporal:
+      first_seen: "2026-08-27"
+      last_seen: "2026-08-27"
+      review_after: "2026-11-27"
+      decay_policy: "slow"
+    governance:
+      visibility: "private_to_user"
+      deletable_by_user: true
+
+  - record_id: "cl-baseline-002"
+    kind: "topic_expertise"
+    attribute: "technical.acumen"
+    value: "Expected to develop production-grade AI systems and architect solutions choosing the best tool for the job, whether Databricks native or otherwise (career ladder expectation, not proven)"
+    scope:
+      products: ["Databricks"]
+      task_types: ["production_ai", "architecture"]
+      thread_id: null
+    status: "active"
+    source:
+      type: "career_ladder"
+      reference_id: "AI-FDE-L5-Technical-Acumen"
+      excerpt: "Develop production-grade AI systems; Can architect solutions and choose the best tool for the job, whether it's Databricks native or otherwise"
+    inference:
+      method: "career_ladder_baseline"
+      confidence: 0.5
+      user_confirmed: false
+    temporal:
+      first_seen: "2026-08-27"
+      last_seen: "2026-08-27"
+      review_after: "2026-11-27"
+      decay_policy: "slow"
+    governance:
+      visibility: "private_to_user"
+      deletable_by_user: true
+
+  - record_id: "cl-baseline-003"
+    kind: "topic_expertise"
+    attribute: "technical.specialization"
+    value: "Expected to have L400 knowledge of GenAI, ML/DL, and MLOps (career ladder expectation, not proven)"
+    scope:
+      products: []
+      task_types: ["genai", "ml_dl", "mlops"]
+      thread_id: null
+    status: "active"
+    source:
+      type: "career_ladder"
+      reference_id: "AI-FDE-L5-Technical-Specialization"
+      excerpt: "L400 knowledge of GenAI, ML/DL, and MLOps"
+    inference:
+      method: "career_ladder_baseline"
+      confidence: 0.5
+      user_confirmed: false
+    temporal:
+      first_seen: "2026-08-27"
+      last_seen: "2026-08-27"
+      review_after: "2026-11-27"
+      decay_policy: "slow"
+    governance:
+      visibility: "private_to_user"
+      deletable_by_user: true
+
+  - record_id: "cl-baseline-004"
+    kind: "topic_expertise"
+    attribute: "team.project_leadership"
+    value: "Expected to establish Databricks as the AI Platform (via customer references, blog posts, etc.), lead small teams of partners and/or customer teams with technical direction and execution plans, and assist in team hiring (career ladder expectation, not proven)"
+    scope:
+      products: ["Databricks"]
+      task_types: ["project_leadership", "team_leadership", "hiring"]
+      thread_id: null
+    status: "active"
+    source:
+      type: "career_ladder"
+      reference_id: "AI-FDE-L5-Project-Leadership"
+      excerpt: "Establish Databricks as the AI Platform, eg as demonstrated by customer references, blog posts, etc.; Leads small teams of partners and/or customer teams, providing technical direction and execution plan for the project; Assistance in team hiring processes"
+    inference:
+      method: "career_ladder_baseline"
+      confidence: 0.5
+      user_confirmed: false
+    temporal:
+      first_seen: "2026-08-27"
+      last_seen: "2026-08-27"
+      review_after: "2026-11-27"
+      decay_policy: "slow"
+    governance:
+      visibility: "private_to_user"
+      deletable_by_user: true
+
+  - record_id: "cl-baseline-005"
+    kind: "customer_context"
+    attribute: "customer.relationship_management"
+    value: "Expected to build trusted advisor relationships with immediate customer teams (career ladder expectation, not proven)"
+    scope:
+      products: []
+      task_types: ["relationship_management"]
+      thread_id: null
+    status: "active"
+    source:
+      type: "career_ladder"
+      reference_id: "AI-FDE-L5-Customer-Relationship-Management"
+      excerpt: "Works with and builds trusted advisor relationship with immediate customer teams"
+    inference:
+      method: "career_ladder_baseline"
+      confidence: 0.5
+      user_confirmed: false
+    temporal:
+      first_seen: "2026-08-27"
+      last_seen: "2026-08-27"
+      review_after: "2026-11-27"
+      decay_policy: "slow"
+    governance:
+      visibility: "private_to_user"
+      deletable_by_user: true
+
+  - record_id: "cl-baseline-006"
+    kind: "customer_context"
+    attribute: "customer.engagements"
+    value: "Expected to context-switch between multiple engagements, handle standard-complexity requests independently, and manage more complex project delivery (e.g. co-delivery with Partners/RSAs) (career ladder expectation, not proven)"
+    scope:
+      products: []
+      task_types: ["engagement_management", "project_delivery"]
+      thread_id: null
+    status: "active"
+    source:
+      type: "career_ladder"
+      reference_id: "AI-FDE-L5-Customer-Engagements"
+      excerpt: "Capable of context-switching between multiple engagements and handling requests of standard complexity independently; Ability to manage more complex project delivery, eg as evidenced by co-delivery with Partners/RSAs"
+    inference:
+      method: "career_ladder_baseline"
+      confidence: 0.5
+      user_confirmed: false
+    temporal:
+      first_seen: "2026-08-27"
+      last_seen: "2026-08-27"
+      review_after: "2026-11-27"
+      decay_policy: "slow"
+    governance:
+      visibility: "private_to_user"
+      deletable_by_user: true
+
+  - record_id: "cl-baseline-007"
+    kind: "customer_context"
+    attribute: "customer.trusted_advisor"
+    value: "Expected to be a trusted advisor to customer data teams as an embedded AI Engineer (career ladder expectation, not proven)"
+    scope:
+      products: []
+      task_types: ["trusted_advisor", "embedded_engineering"]
+      thread_id: null
+    status: "active"
+    source:
+      type: "career_ladder"
+      reference_id: "AI-FDE-L5-Trusted-Advisor"
+      excerpt: "Trusted advisor to customer data teams as an embedded AI Engineer"
+    inference:
+      method: "career_ladder_baseline"
+      confidence: 0.5
+      user_confirmed: false
+    temporal:
+      first_seen: "2026-08-27"
+      last_seen: "2026-08-27"
+      review_after: "2026-11-27"
+      decay_policy: "slow"
+    governance:
+      visibility: "private_to_user"
+      deletable_by_user: true
+
+# ---------------------------------------------------------------------------
+# UNKNOWN FIELDS (cold-start: no evidence available)
+# ---------------------------------------------------------------------------
+# The following are explicitly marked unknown. No conversation history,
+# project documents, or behavioral signals exist to populate them.
+current_projects: unknown
+objectives: unknown
+active_threads: unknown
+preferences:
+  communication_style: unknown
+  preferred_structure: unknown
+  tooling_preferences: unknown
+  explanation_depth: unknown
+  work_patterns: unknown
+
+# Notes:
+# - All records above are career_ladder_baseline expectations for L5, NOT proven
+#   individual capabilities of Mohamad Aboufoul.
+# - Confidence capped at ~0.5 to reflect that these are role expectations only.
+# - No personality, communication style, or active work has been inferred.
