@@ -137,7 +137,7 @@ print(f"embedding_model (endpoint): {EMBED_ENDPOINT}")
 
 # COMMAND ----------
 
-df_to_embed = spark.sql(f"""  # noqa: F821
+df_to_embed = spark.sql(f"""
     SELECT memory_id, memory_text
     FROM {ATOMIC_TBL}
     WHERE embedding IS NULL
@@ -256,7 +256,7 @@ embed_rows = [(mid, vec, EMBED_ENDPOINT) for mid, vec in embed_results]
 if embed_rows:
     df_emb = spark.createDataFrame(embed_rows, schema=EMB_SCHEMA)   # noqa: F821
     df_emb.createOrReplaceTempView("_new_embeddings")
-    spark.sql(f"""  # noqa: F821
+    spark.sql(f"""
         MERGE INTO {ATOMIC_TBL} t
         USING _new_embeddings s
         ON t.memory_id = s.memory_id
@@ -276,7 +276,7 @@ else:
 # COMMAND ----------
 
 # 1. No remaining NULLs (must be 0 after embed, regardless of whether dedup will run).
-remaining_null = spark.sql(f"""  # noqa: F821
+remaining_null = spark.sql(f"""
     SELECT COUNT(*) AS n FROM {ATOMIC_TBL} WHERE embedding IS NULL
 """).first()["n"]
 print(f"Remaining embedding IS NULL: {remaining_null}")
@@ -288,7 +288,7 @@ if remaining_null != 0:
 print("PASS: all rows now have embeddings.")
 
 # 2. All non-null vectors have exactly EXPECTED_DIM components.
-dim_rows = spark.sql(f"""  # noqa: F821
+dim_rows = spark.sql(f"""
     SELECT DISTINCT size(embedding) AS dim
     FROM {ATOMIC_TBL}
     WHERE embedding IS NOT NULL
@@ -318,7 +318,7 @@ banned_df = spark.createDataFrame(   # noqa: F821
 )
 banned_df.createOrReplaceTempView("_banned_conversation_ids")
 
-heldout_rows = spark.sql(f"""  # noqa: F821
+heldout_rows = spark.sql(f"""
     SELECT COUNT(*) AS n
     FROM {ATOMIC_TBL} m
     JOIN _banned_conversation_ids b
@@ -384,7 +384,7 @@ def _choose_keeper(ri, rj):
 
 
 # Collect all embedded rows for dedup analysis (small set, O(n²) is acceptable).
-df_all = spark.sql(f"""  # noqa: F821
+df_all = spark.sql(f"""
     SELECT memory_id, memory_type, confidence, source_datetime, embedding
     FROM {ATOMIC_TBL}
     WHERE embedding IS NOT NULL
@@ -423,7 +423,7 @@ if DEDUP_ENABLED:
             schema=StructType([StructField("memory_id", StringType(), False)]),
         )
         drop_df.createOrReplaceTempView("_dedup_drop_ids")
-        spark.sql(f"""  # noqa: F821
+        spark.sql(f"""
             DELETE FROM {ATOMIC_TBL}
             WHERE memory_id IN (SELECT memory_id FROM _dedup_drop_ids)
         """)
