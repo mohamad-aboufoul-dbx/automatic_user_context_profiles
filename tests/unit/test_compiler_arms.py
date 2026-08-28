@@ -271,7 +271,12 @@ class TestPlacebo:
         assert len(placebo_result) == retrieved_count
 
     def test_count_equals_retrieved_when_retrieved_includes_repo_mem(self):
-        """N matches retrieved count even when retrieved selects a repo mem itself."""
+        """N matches retrieved count exactly even when retrieved selects a repo mem.
+
+        Fixture: 1 repo mem + 3 non-repo mems, top_k=3, large token_budget.
+        retrieved picks 3 (repo_1, non_1, non_2); placebo has 3 non-repo mems
+        available and must fill all 3 — strict equality, not just <=.
+        """
         # retrieved considers ALL mems including repo_domain mems
         mems = [
             _make_mem("repo_1", [1.0, 0.0], 0.95, "2026-08-01T00:00:00Z", domain=REPO_DOMAIN),
@@ -279,7 +284,7 @@ class TestPlacebo:
             _make_mem("non_2",  [1.0, 0.0], 0.7,  "2026-08-01T00:00:00Z", domain="domain_b"),
             _make_mem("non_3",  [1.0, 0.0], 0.6,  "2026-08-01T00:00:00Z", domain="domain_c"),
         ]
-        cfg = {**BASE_CFG, "top_k": 3}
+        cfg = {**BASE_CFG, "top_k": 3, "token_budget": 10_000}
         task = {"goal_embedding": [1.0, 0.0], "repo_domain": REPO_DOMAIN}
 
         retrieved_count = len(pool("retrieved", mems, task, cfg, NOW))
@@ -287,8 +292,33 @@ class TestPlacebo:
 
         # placebo must not include repo mem
         assert all(m["domain"] != REPO_DOMAIN for m in placebo_result)
-        # but its count must match retrieved count (or fewer if non-repo mems run out)
-        assert len(placebo_result) <= retrieved_count
+        # count must equal retrieved count exactly (3 non-repo mems are available)
+        assert len(placebo_result) == retrieved_count
+
+    def test_count_capped_when_non_repo_mems_run_out(self):
+        """placebo count equals len(non_repo_mems) when fewer are available than N.
+
+        Fixture: retrieved_count = 3 (top_k=3, 4 total mems including 1 repo).
+        Only 2 non-repo mems exist, so placebo is capped at 2, not 3.
+        """
+        mems = [
+            _make_mem("repo_1", [1.0, 0.0], 0.95, "2026-08-01T00:00:00Z", domain=REPO_DOMAIN),
+            _make_mem("repo_2", [1.0, 0.0], 0.85, "2026-08-01T00:00:00Z", domain=REPO_DOMAIN),
+            _make_mem("non_1",  [1.0, 0.0], 0.7,  "2026-08-01T00:00:00Z", domain="domain_a"),
+            _make_mem("non_2",  [1.0, 0.0], 0.6,  "2026-08-01T00:00:00Z", domain="domain_b"),
+        ]
+        cfg = {**BASE_CFG, "top_k": 3, "token_budget": 10_000}
+        task = {"goal_embedding": [1.0, 0.0], "repo_domain": REPO_DOMAIN}
+
+        retrieved_count = len(pool("retrieved", mems, task, cfg, NOW))
+        non_repo_mems = [m for m in mems if m["domain"] != REPO_DOMAIN]
+        placebo_result = pool("placebo", mems, task, cfg, NOW)
+
+        # retrieved picks 3; only 2 non-repo mems exist → placebo capped at 2
+        assert retrieved_count == 3
+        assert len(non_repo_mems) == 2
+        assert len(placebo_result) == len(non_repo_mems)
+        assert all(m["domain"] != REPO_DOMAIN for m in placebo_result)
 
     def test_respects_token_budget(self):
         """placebo never exceeds token_budget."""
