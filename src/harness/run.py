@@ -58,6 +58,14 @@ AGENT_NAME = "claude-code"
 # override via model= parameter in run_one/run_matrix.
 DEFAULT_MODEL = "databricks-claude-sonnet-4-5"
 
+# EMPIRICAL (confirmed at 5.3): an explicit --allowedTools allowlist is REQUIRED for
+# the agent's Write/Edit to actually persist in this wrapped Claude-Code environment —
+# without it, bypassPermissions/--dangerously-skip-permissions still silently block file
+# writes ("I need permission to create new files"), so no run produces any code. Local
+# coding tools only; web tools are intentionally EXCLUDED to keep the eval air-gapped
+# (the agent must not look up the reference solution online).
+AGENT_ALLOWED_TOOLS = "Read,Write,Edit,MultiEdit,Bash,Glob,Grep,LS"
+
 # T1 oracle spec (contamination trust anchor: keep oracle OUT of agent context).
 # These are the AUTHORITATIVE fallback defaults used when task_def["acceptance_oracle"]
 # omits source_commit / fixture_path.  run_one reads oracle_spec.get("source_commit",
@@ -651,6 +659,7 @@ def run_agent(
         "--verbose",
         "--model", model,
         "--permission-mode", "bypassPermissions",
+        "--allowedTools", AGENT_ALLOWED_TOOLS,
         "--add-dir", worktree,
     ]
     if settings_path:
