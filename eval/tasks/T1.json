@@ -28,8 +28,8 @@
   "acceptance_oracle": {
     "fixture_repo_path": "eval/oracles/T1_public_oracle.py",
     "target_path": "tests/unit/test_image_selection_auto_k.py",
-    "test_count": 29,
-    "derivation": "relaxed public-API subset of platform 98b8bd7 oracle (human decision 2026-08-28)"
+    "test_count": 17,
+    "derivation": "fresh public-behavioral oracle bound to frozen goal_prompt public contract; 10 derive_k_range + 7 behavioral (human decision C, 2026-08-28)"
   },
-  "task_definition_hash": "95946d7125adeca4aa4e5173f657280211247ca26a55f5c7cadec437a06e9ae6"
+  "task_definition_hash": "0de391afde5acc86c6647491fd44522548bd461a6f17c5af83866eafa1cece4d"
 }

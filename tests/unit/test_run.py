@@ -1316,7 +1316,7 @@ class TestRunOneT1OracleRepoFixture:
             "acceptance_oracle": {
                 "fixture_repo_path": "eval/oracles/T1_public_oracle.py",
                 "target_path": oracle_target,
-                "test_count": 29,
+                "test_count": 17,
                 "derivation": "test",
             },
         }
@@ -1364,7 +1364,7 @@ class TestRunOneT1OracleRepoFixture:
             "acceptance_oracle": {
                 "fixture_repo_path": "eval/oracles/T1_public_oracle.py",
                 "target_path": oracle_target,
-                "test_count": 29,
+                "test_count": 17,
                 "derivation": "test",
             },
         }
@@ -1406,7 +1406,7 @@ class TestRunOneT1OracleRepoFixture:
             "acceptance_oracle": {
                 "fixture_repo_path": "eval/oracles/T1_public_oracle.py",
                 "target_path": oracle_target,
-                "test_count": 29,
+                "test_count": 17,
                 "derivation": "test",
             },
         }
@@ -1471,7 +1471,7 @@ class TestRunOneT1OracleRepoFixture:
             "acceptance_oracle": {
                 "fixture_repo_path": "eval/oracles/T1_public_oracle.py",
                 "target_path": oracle_target,
-                "test_count": 29,
+                "test_count": 17,
                 "derivation": "test",
             },
         }
@@ -1522,7 +1522,7 @@ class TestRunOneT1OracleRepoFixture:
             "acceptance_oracle": {
                 "fixture_repo_path": "eval/oracles/T1_public_oracle.py",
                 "target_path": oracle_target,
-                "test_count": 29,
+                "test_count": 17,
                 "derivation": "test",
             },
         }
@@ -1622,7 +1622,7 @@ class TestRunOneT1OracleRepoFixture:
                 "fixture_repo_path": "eval/oracles/T1_public_oracle.py",
                 "target_path": "tests/unit/test_image_selection_auto_k.py",
                 "source_commit": "98b8bd7",  # present but must be ignored
-                "test_count": 29,
+                "test_count": 17,
             },
         }
 
