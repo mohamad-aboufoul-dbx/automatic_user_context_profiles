@@ -1,0 +1,155 @@
+# User: Mohamad Aboufoul
+# Profile: level_3_evidence | Data source: Cold-start + Chat (iterative)
+# Generated: 2026-08-28T01:01:38.223460
+# Model: databricks-claude-opus-4-8
+# Source: ai_fde_hackathon_catalog.automatic_user_context_profiles.profile_checkpoints_v2
+
+# =============================================================================
+# USER CONTEXT PROFILE — INSTRUCTIONS FOR AGENT
+# =============================================================================
+# The YAML block that follows this prefix is a structured user context profile.
+# It was built incrementally from career metadata, conversation history, and
+# authored documents. Use it to personalize your responses WITHOUT requiring
+# the user to re-explain their background, preferences, or active work.
+#
+# HOW TO USE THIS PROFILE:
+#
+# 1. IDENTITY & CONTEXT
+#    - Refer to the user by name when natural
+#    - Understand their role, team, and tenure to calibrate formality and depth
+#    - Reference their active projects/threads when relevant to the question
+#
+# 2. CAPABILITY SNAPSHOT
+#    - strongest_areas: Skip basic explanations for these topics
+#    - proficient_in: Can handle intermediate discussion without preamble
+#    - developing_in: Explain concepts but respect they have some context
+#    - still_learning: Provide clear explanations, examples, and check understanding
+#
+# 3. INTERACTION GUIDANCE
+#    - Follow the by_task preferences (e.g., "debugging: concise", "learning: adaptive")
+#    - Apply response_pattern_claims — these are TESTED patterns from real interactions
+#    - Respect the preferred_structure and avoid patterns listed under each claim
+#    - When a claim has confidence > 0.8, treat it as a strong preference
+#    - When confidence is 0.5–0.7, treat as a suggestion, not a rule
+#
+# 4. RESPONSE PATTERNS (from interaction_outcomes)
+#    - If the profile lists failure_modes for a task type, AVOID those patterns
+#    - If repair_strategies are listed, APPLY them proactively
+#    - Common failure modes:
+#        buried_answer: Put the direct answer FIRST, details after
+#        too_verbose: Be concise; let the user ask for more
+#        too_basic: Skip fundamentals they already know
+#        wrong_assumption: Check the profile's knowledge section before assuming
+#        missing_example: Include a concrete example when explaining
+#        premature_solutioning: Understand the problem before proposing fixes
+#
+# 5. ACTIVE THREADS & PROJECTS
+#    - If the user's question relates to a listed active_thread, pull in that context
+#    - Reference project goals, stakeholders, and deliverables when helpful
+#    - Don't assume projects listed as 'active' are still active if the evidence is old
+#
+# 6. WHAT NOT TO DO
+#    - Do NOT repeat information the user obviously already knows
+#    - Do NOT over-explain topics listed in strongest_areas or proficient_in
+#    - Do NOT treat career_ladder expectations as proven capabilities
+#    - Do NOT reference the profile explicitly (“your profile says...”)
+#    - Do NOT apply a single scoped preference globally (check the scope field)
+#    - Do NOT ignore low-confidence claims — use them as soft guidance
+#
+# 7. CONFIDENCE INTERPRETATION
+#    - 0.9–1.0: User-confirmed or explicitly stated. Treat as strong.
+#    - 0.7–0.9: Repeated behavior or strong evidence. Default to following it.
+#    - 0.5–0.7: Single observation or career-ladder inference. Soft guidance only.
+#    - < 0.5: Tentative. Don't act on it unless corroborated by the conversation.
+#
+# 8. CHRONOLOGICAL AWARENESS
+#    - More recent evidence (last_seen dates) is more relevant
+#    - Skills and projects can change — respect the temporal markers
+#    - If the user contradicts the profile in this conversation, FOLLOW THE USER
+#
+# =============================================================================
+# USER PROFILE BEGINS BELOW:
+# =============================================================================
+
+updated_profiles:
+  level_1_compact:
+    compact_profile:
+      about_user:
+        name: "Mohamad Aboufoul"
+        title: "Senior AI FDE (Level L5)"
+        tenure: "March 2024 - present"
+        works_with:
+          - "AI Field Engineering (AI FDE) team"
+          - "Customer data/AI teams (per ladder expectations)"
+          - "Partners/RSAs (per ladder expectations)"
+          - "AT&T (client he is advising on cross-workspace model access & MLflow versioning; migrating from Palantir to Databricks) (2026-08-21)"
+          - "Xerox (client whose 7-project AI/agent portfolio Mohamad is analyzing/scoping from a governance doc) (2026-08-25)"
+
+      current_focus:
+        active_projects:
+          - "Databricks volume file-curation/organization task: programmatically selecting/deduplicating multilingual documents (prefer _en_EN, fallback es/fr/de/it/ja), copying to a new volume path, and reorganizing folders; scaling to tens of thousands of files (~20k–80k) on serverless (observed 2026-06-29 and 2026-06-30)"
+          - "Data-quality cleanup for a multilingual document ingestion pipeline (IBU version of apply_data_quality_cleanup() in ingestion_utils shared repo): removing arbitrary repeated characters/substrings/lines/paragraphs and TOC/table noise from original + translated text columns across EMA/PMDA/AIFA/DPD/AEMPS/VVMC source tables; optimizing for ~500k rows; downstream goal is a Vector Search index (observed 2026-07-07)"
+          - "Cross-schema migration on Databricks: copying an entire volume (~50k files, ~1MB each, ~50–60GB total) and copying tables between schemas; hit serverless config limitations and timeouts, now working toward an idempotent/incremental copy that survives retries (observed 2026-07-13)"
+          - "AT&T advisory deliverable: authoring a client-ready Markdown guide (+ condensed quickstart) on (1) accessing/using models across multiple Databricks workspaces and (2) MLflow versioning for serverless deployments. Client is migrating agents from Palantir to Databricks, wants to deploy an agent ONCE and call it from ~5 workspaces (no per-workspace deploy), convert Palantir artifacts to Databricks dashboards, and mitigate MLflow/DBR compatibility breakage (currently on MLflow 2.20.1). Producing lifecycle guide (MLflow logging → UC registration → Model Serving deployment), admin/owner vs cross-workspace-user responsibility matrices, permission prerequisites, UI locations, custom-agent vs ordinary-model distinctions, programmatic deployment-control options (SDK/CLI/REST/Bundles), and verified public-doc links (2026-08-21)"
+          - "Databricks Apps-based REST API design: exposing a Rules/Tag-Groups CRUD API (GET/POST/PATCH/DELETE endpoints) via a custom FastAPI/Flask Databricks App backed by Lakebase for durable storage; scoping hosting model, external service-principal access (OAuth M2M + CAN USE), and /api/* routing (2026-08-21)"
+          - "Xerox engagement scoping/analysis: distilling a 7-project AI/agent portfolio (PID000134 HR Digital Worker, PID000135 Internal Comms Agent, +5 more) from a high-level governance doc into per-project FDE-oriented summaries (use case, stakeholders/end users, dependencies, data, use-case type/deliverables, example I/O, supporting team size/roles); flagging that the doc lacks technical specs (record counts, schemas, sample prompts, team headcounts) (2026-08-25)"
+        this_week_objectives:
+          - unknown
+        near_term_objectives:
+          - unknown
+        long_term_objectives:
+          - unknown
+
+      capability_snapshot:
+        strongest_areas: []
+        proficient_in: []
+        developing_in:
+          - "Databricks file/volume operations (dbutils.fs ls/cp/mv, Unity Catalog volumes, managed vs external volumes, cross-schema copy) — applied across multiple multi-day tasks; recurring focus on move/rename/copy semantics and retry safety (observed through 2026-07-13)"
+          - "PySpark text-cleanup / data-quality transforms (regexp_replace, split/transform/filter, UDF vs Pandas UDF vs native built-ins trade-offs) — applied to a real ingestion pipeline; iterating on correctness and performance (observed 2026-07-07)"
+          - "Cross-workspace model access & deployment lifecycle on Databricks (MLflow logging → UC registration → Model Serving) — now applied in a real client advisory: distinguishing workspace-local tracking vs UC-registered models, workspace-scoped Serving endpoints vs UC/AI-Gateway model services, and enumerating cross-workspace access mechanisms (UI/REST/CLI/SDK/Apps/Jobs/SQL) with permission prerequisites; iteratively producing and refining a client deliverable (2026-08-19 conceptual, 2026-08-21 applied advisory)"
+          - "Databricks Apps as a hosting model for custom REST APIs — exploring how to expose a FastAPI/Flask CRUD API via a Databricks App (managed serverless web server, auto-generated app URL, /api/* routing, DATABRICKS_APP_PORT, 0.0.0.0 binding) and how external systems query it (service principal + OAuth M2M + CAN USE); backing the API with Lakebase for transactional storage. Coming from a Model Serving background and explicitly contrasting App-hosted API vs model endpoints (2026-08-21)"
+          - "Engagement scoping / requirements analysis — reads client governance/portfolio docs and extracts FDE-relevant structure (use case, stakeholders/end users, dependencies, data specifics, use-case type, deliverables, example I/O, supporting-team size/roles); self-identifies as 'an AI FDE with a few years of experience building agents and ML projects from concept to production' and critically flags when a doc is high-level governance jargon lacking technical specs (2026-08-25)"
+
+        still_learning:
+          - "Parallelizing/scaling filesystem operations on Databricks serverless compute (recurring concern; explored ThreadPoolExecutor vs Spark-parallel/Hadoop FileUtil; learned parallel dbutils config is unavailable on serverless and copy timed out at ~50k files, now handling via increased execution timeout + incremental idempotent copy — 2026-07-13)"
+          - "Scaling Spark string/text transforms over large row counts (~500k); understanding why Python/Pandas UDFs are slow vs native built-ins, and simplifying query plans to reduce per-row work (observed 2026-07-07)"
+          - "Unity Catalog table migration (DEEP/SHALLOW CLONE, SYNC SCHEMA) between schemas — single question, low confidence (2026-07-13)"
+          - "MCP (Model Context Protocol) architecture and agent tooling — conceptual learning: MCP vs conventional APIs, client/host/server roles, JSON-RPC over HTTP/stdio, tools/list & tools/call, async task patterns (polling, pollInterval, webhooks/events), and FastMCP composition/proxy patterns (mounting lower-level MCPs into a bundle, flattened namespaced tool catalogs, tool-selection/context scaling concerns). Conceptual Q&A only, no applied work yet (2026-08-11)"
+          - "Databricks LTAP architecture (Lakebase, Lakehouse//RT, Reyden/NeoReyden, Lakebase CDF, LTAP Direct Writes, Lakebase Live Query/Direct Access, pgvector vs Vector Search) — deep conceptual learning thread distinguishing product vs engine vs storage-access layers, OLTP/OLAP integration, WAL durability vs columnar materialization/LSN snapshots, Reyden latency mechanisms (native Rust engine, Photon, JVM removal), tenancy/concurrency, and shuffle-heavy joins. Working through internal level-up decks; conceptual only, no applied work yet (2026-08-18)"
+          - "Databricks Genie Agents over Unity Catalog volumes (file/OCR support, Agent vs Chat mode, Content Search sync/indexing behavior, ai_parse_document/ai_extract Document Intelligence pipeline, per-agent volume/file limits) and how Genie's managed file-retrieval compares to Databricks AI Search retrieval modes (semantic/ANN, full-text/keyword, hybrid, filtering, reranking) — conceptual Q&A, no applied work yet (2026-08-18). Also explored promoting/versioning Genie Agents via IaC: exporting the serialized_space JSON via Databricks CLI (databricks bundle generate genie-space, databricks genie get-space --include-serialized-space) and deploying across QA/stage/prod workspaces using genie_spaces Declarative Automation Bundle resources (2026-08-19)"
+          - "Cross-workspace agent deployment/access on Databricks — advanced from conceptual (2026-08-19) to applied client advisory (2026-08-21): Model Serving endpoints workspace-scoped; cross-workspace invocation via REST/SDK/CLI/OpenAI client with service-principal + CAN_QUERY (not via ai_query, which is workspace-local); UC-registered models accessible metastore-wide subject to UC grants while endpoint wrapper/ACLs remain workspace-scoped; workspace-local Serving endpoints (workspace ACLs) vs Unity AI Gateway model services (UC privileges, span attached workspaces); deploy-once-call-from-many pattern; programmatic deployment controls (rate limits/guardrails/permissions) via Python SDK update_config_and_wait/update_permissions, MLflow Deployments SDK, CLI, Declarative Automation Bundles, REST fallback"
+          - "MLflow versioning / DBR compatibility management for serverless model deployments — surfaced as a client concern (AT&T on MLflow 2.20.1 breaking on silent upgrades); Mohamad scoped it out to a separate doc, has not yet produced mitigation guidance (2026-08-21)"
+          - "Databricks custom agent authoring & deployment paths — conceptual Q&A distinguishing the Databricks Apps custom-agent path (ResponsesAgent/AgentServer, MLflow tracing handled by the app integration) from the traditional MLflow-model lifecycle (log → register UC model version → deploy to Model Serving via agents.deploy()); recognized the docs page he was reading was the Apps tutorial and probed whether the App is mandatory and how to deploy agent-as-API without it. Confirmed via production-tracing docs that Apps is the recommended path with Model Serving as alternative (2026-08-21)"
+          - "Databricks Apps for API hosting — how a custom App exposes a FastAPI/Flask REST API (managed serverless container, auto-generated *.databricksapps.com URL, Running-status requirement, /api/* route convention, DATABRICKS_APP_PORT / 0.0.0.0 binding) and how external callers authenticate (service principal, OAuth M2M client_credentials, CAN USE on the App, App SP granted access to backing Lakebase); coming from a Model Serving mental model. Conceptual/architecture Q&A, no applied App built yet (2026-08-21)"
+          - "AI FDE engagement-scoping tooling/process — oriented to the current scoping workflow: PScope (go/scope; converts meeting notes into reviewed proposals + slides) as the still-current proposal-generation tool within a broader flow (FDE Readiness Check → AI FDE Scoping Doc → FDE Engagement Canvas → PScope → Airtable handoff). Also explored whether a Glean extension replicates PScope's note→proposal/slide functionality (none exists). Informational lookup only, no applied scoping work observed in-thread (2026-08-21)"
+
+      interaction_guidance:
+        default_response_style: "unknown"
+        by_task:
+          debugging: "When user hits a Spark error (e.g., INVALID_EXTRACT_FIELD_TYPE, CONFIG_NOT_AVAILABLE) or a timeout, give the root cause plus a corrected, complete drop-in version — user applies fixes and continues iterating (multiple observations)"
+          product_questions: "For Databricks product/capability questions (Genie Agents, AI Search, IaC/Bundles, cross-workspace agent access, custom agent deployment paths, model deployment lifecycle, Databricks Apps as API hosting), user wants precise supported-format/limit tables, explicit distinctions between related features/paths (Content Search enabled vs disabled; Genie managed retrieval vs AI Search configurable retrieval; legacy Model Serving AI Gateway config vs UC-registered model; workspace-scoped vs UC-scoped; Databricks Apps agent path vs MLflow-model + Model Serving path; workspace-local Serving endpoint vs Unity AI Gateway model service; App-hosted REST API vs Model Serving endpoint), the concrete CLI/API/SDK command or resource syntax, and correction of any earlier imprecision — he frequently notices when docs/code don't match his expectation and probes follow-ups on limits, behavior nuances, defaults, and 'is there a way to do X without Y'. He VERIFIES documentation links and will ASK which docs an answer is based on — cite only verified public docs, list your sources when providing architectural claims, and confirm a linked page actually covers the claimed content (2026-08-18, 2026-08-19, 2026-08-21). For internal-tooling/process questions (engagement scoping), he asks whether the current tool is still current and whether an alternative/adjacent tool replicates it — give the current tool + its place in the workflow, and honestly state when no equivalent exists (2026-08-21)"
+          architecture: "unknown"
+          project_scoping: "When analyzing client/portfolio docs for scoping, user wants tightly-structured per-project answers matching the exact question schema he supplies (use case, stakeholders/end users, dependencies, data, type/deliverables, example I/O, supporting-team size/roles), then requests a plain-language, jargon-stripped 'what is the ask really' pass. As an experienced FDE he is impatient with 'unnatural AI-generated' corporate/governance jargon — strip buzzwords, focus on functional reality, and explicitly flag missing technical specs (record counts, schemas, sample prompts, team headcounts) rather than inventing them (2026-08-25)"
+          customer_preparation: "When producing client-facing deliverables, user scopes tightly and iterates by ADDING targeted content, not restructuring. Once a document is 'good', make ONLY the requested surgical additions/modifications and preserve the existing core (examples, tables, succinct step coverage) verbatim — do NOT rewrite or expand. He corrected 'You modified too much' twice; over-editing a working artifact is a repeated failure mode. He also asks for tiered outputs (a detailed advisory + a condensed client quickstart) (2026-08-21). When digesting client scoping docs, he asks for a structured extraction first, then a jargon-free plain-terms restatement aimed at an experienced practitioner (2026-08-25)"
+          learning: "When iterating on code across turns, preserve variable names and explicitly connect new code to what was given before; do not silently rename or refactor. User reliably follows up on performance/scale implications — proactively address runtime for large data volumes. User will interrogate specific config/regex/code lines they don't follow — be ready to explain syntax and why a construct is needed. For conceptual/architecture/product topics (MCP, LTAP/Lakebase, Genie Agents/AI Search, cross-workspace agent access, Databricks Apps, Ray/vLLM, IaC/Bundles, custom agent deployment) and for code walkthroughs of existing repos, user drives a progressive Socratic thread — asks one topic at a time, explicitly scopes the depth he wants, maps new concepts to ones he knows (POST/RPC, UC catalog sharing, Model Serving mental model), surfaces and challenges contradictions in prior explanations, probes limits/edge cases/defaults, and pushes toward practical/scale implications; concrete diagrams, comparison tables, worked examples, non-distributed→distributed before/after code, and analogies land well. When the assistant answers a slightly different question than asked, user restates the precise ask — track exactly what he asked and don't drift to an adjacent solution. Be precise about product-vs-engine-vs-codename and path/resource-type distinctions and admit uncertainty rather than overclaiming (2026-07-07, 2026-07-13, 2026-08-11, 2026-08-18, 2026-08-19, 2026-08-21)"
+        response_pattern_claims:
+          - "User habitually probes performance/runtime after getting a working solution — proactively state whether an approach scales and how long it should take at their volume (file counts ~20k–80k, ~50k; row counts ~500k) and why (four+ observations across 2026-06-29, 2026-06-30, 2026-07-07, 2026-07-13); this instinct extends to architecture (Reyden latency mechanisms, shuffle-heavy joins, tenancy/concurrency — 2026-08-18) and to distributed-inference tuning (Ray parallelism, vLLM tensor_parallel_size/GPU memory — 2026-08-19)"
+          - "User frequently quotes a specific line from the prior answer and asks 'what's the difference' / 'why do I need this' — be precise and ready to justify individual constructs (2026-07-13, 2026-08-11, 2026-08-18)"
+          - "When learning a new concept, user requests progressive simplification ('can you put this into simpler terms?'), anchors understanding to familiar mental models (APIs/POST/RPC, UC catalog cross-workspace sharing, Model Serving), takes one topic at a time, and actively catches contradictions between successive explanations — resolve them explicitly rather than layering another analogy (2026-08-11, 2026-08-18, 2026-08-19, 2026-08-21). This 'strip it to plain terms' instinct also applies to dense client/governance documents — he explicitly asks for jargon removed and functional reality surfaced, framed for an experienced FDE (2026-08-25)"
+          - "For product-capability questions, user asks layered follow-ups probing limits, thresholds, behavioral nuances, defaults, and alternative mechanisms ('can't another workspace access it via ai_query?', 'is there a way without raw REST calls?', 'is the default to use a Databricks App? what if the user doesn't want the app portion?', 'are there other ways besides what's listed? is there an API/SDK version?', 'is there a Glean extension with the same functionality?', 'where does this API live? how can an external person query it?') and expects comparison tables and explicit feature-boundary / path / resource-type distinctions (2026-08-18, 2026-08-19, 2026-08-21)"
+          - "When learning from an existing codebase, user explicitly scopes the granularity ('explain per section, not every line'; 'I just need to understand how Ray and vLLM work here') and proceeds sequentially through files/notebooks — honor the requested altitude and don't over-annotate (2026-08-19)"
+          - "User asks goal-oriented, ops/production-minded 'how do I actually do X' questions (export/version/promote an artifact via IaC; deploy once and access across workspaces; deploy a custom agent without the App; modify deployment controls programmatically; expose a CRUD API via a Databricks App accessible to external callers) grounded in real deployment concerns, and will correct the assistant when it answers an adjacent question — pin down the exact mechanism he asked about before offering alternatives (2026-08-19, 2026-08-21)"
+          - "When co-authoring a document/artifact that he considers 'good', user wants ONLY targeted, surgical additions — he will push back sharply ('You modified too much') if the core, examples, or structure are rewritten. Default to minimal in-place insertions and preserve existing content verbatim once he signals the doc is solid (2026-08-21)"
+          - "User verifies cited documentation links and reports broken/incorrect ones, and will ASK which docs an answer draws from ('Which docs are you using for these examples?', 'this link does not exist', 'that page only shows the Apps path'). Cite only verified URLs, proactively list sources for architectural claims, confirm the page actually covers the referenced content, and correct mismatches promptly (2026-08-21)"
+          - "User checks whether the tool/process he's using is still the current/recommended one and whether an adjacent tool replicates it ('what's the most recent tool... Is it still p-scope?', 'is there a Glean extension with the same functionality?') — confirm currency, place the tool in its broader workflow, and honestly say when no equivalent exists rather than inventing one (2026-08-21)"
+          - "When given a fixed answer schema (e.g., '3 bullets per question for these 7 projects'), user expects the format honored exactly and consistently per item; he then often asks for a condensed/plain-language second pass. Respect the requested structure, then be ready to distill (2026-08-25)"
+
+      active_threads:
+        - "Multilingual document curation & folder organization on Databricks volumes at scale (~20k–80k files) — serverless, PySpark-preferred"
+        - "Data-quality text cleanup for multilingual document ingestion pipeline (IBU apply_data_quality_cleanup) at ~500k rows — PySpark-native preferred, feeding a Vector Search index"
+        - "Cross-schema volume + table migration on Databricks serverless — one-time ad-hoc copy of ~50k files with retry-safe/idempotent handling after timeout (2026-07-13)"
+        - "Conceptual learning: MCP + FastMCP architecture for agent tooling — client/server model, async task/polling/webhook patterns, and multi-layer FastMCP composition & tool-catalog scaling (referenced S&P Global Databricks Genie/MCP blog) (2026-08-11)"
+        - "Conceptual learning: Databricks LTAP stack (Lakebase, Lakehouse//RT, Reyden/NeoReyden, Lakebase CDF, LTAP Direct Writes/Access, pgvector vs Vector Search) via internal level-up decks — separating OLTP/OLAP layers, WAL/LSN materialization semantics, and Reyden latency/concurrency architecture (2026-08-18)"
+        - "Conceptual learning: Databricks Genie Agents over volumes (file/OCR support, Content Search indexing, ai_parse_document/Document Intelligence, per-agent limits) and how Genie file-retrieval compares to AI Search retrieval modes (2026-08-18); plus IaC promotion of Genie Agents across workspaces via genie_spaces Bundles and CLI JSON export (2026-08-19)"
+        - "Cross-workspace agent/model deployment & access on Databricks — advanced from conceptual (2026-08-19) to an applied AT&T client advisory deliverable (2026-08-21): deploy-once-call-from-many, workspace-local Serving endpoint vs Unity AI Gateway model service, UC-registered model scoping, programmatic deployment controls, and permission prerequisites"
+        - "Conceptual learning / code walkthrough: Ray Core + vLLM batch video-inference solution accelerator — data-staging notebook and Ray/vLLM inference notebook (Qwen2.5-VL,

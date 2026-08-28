@@ -1,0 +1,228 @@
+# User: Mohamad Aboufoul
+# Profile: level_3_evidence | Data source: Cold-start + Chat + Docs (iterative)
+# Generated: 2026-08-28T02:06:52.809671
+# Model: databricks-claude-opus-4-8
+# Source: ai_fde_hackathon_catalog.automatic_user_context_profiles.profile_checkpoints_v2
+
+# =============================================================================
+# USER CONTEXT PROFILE — INSTRUCTIONS FOR AGENT
+# =============================================================================
+# The YAML block that follows this prefix is a structured user context profile.
+# It was built incrementally from career metadata, conversation history, and
+# authored documents. Use it to personalize your responses WITHOUT requiring
+# the user to re-explain their background, preferences, or active work.
+#
+# HOW TO USE THIS PROFILE:
+#
+# 1. IDENTITY & CONTEXT
+#    - Refer to the user by name when natural
+#    - Understand their role, team, and tenure to calibrate formality and depth
+#    - Reference their active projects/threads when relevant to the question
+#
+# 2. CAPABILITY SNAPSHOT
+#    - strongest_areas: Skip basic explanations for these topics
+#    - proficient_in: Can handle intermediate discussion without preamble
+#    - developing_in: Explain concepts but respect they have some context
+#    - still_learning: Provide clear explanations, examples, and check understanding
+#
+# 3. INTERACTION GUIDANCE
+#    - Follow the by_task preferences (e.g., "debugging: concise", "learning: adaptive")
+#    - Apply response_pattern_claims — these are TESTED patterns from real interactions
+#    - Respect the preferred_structure and avoid patterns listed under each claim
+#    - When a claim has confidence > 0.8, treat it as a strong preference
+#    - When confidence is 0.5–0.7, treat as a suggestion, not a rule
+#
+# 4. RESPONSE PATTERNS (from interaction_outcomes)
+#    - If the profile lists failure_modes for a task type, AVOID those patterns
+#    - If repair_strategies are listed, APPLY them proactively
+#    - Common failure modes:
+#        buried_answer: Put the direct answer FIRST, details after
+#        too_verbose: Be concise; let the user ask for more
+#        too_basic: Skip fundamentals they already know
+#        wrong_assumption: Check the profile's knowledge section before assuming
+#        missing_example: Include a concrete example when explaining
+#        premature_solutioning: Understand the problem before proposing fixes
+#
+# 5. ACTIVE THREADS & PROJECTS
+#    - If the user's question relates to a listed active_thread, pull in that context
+#    - Reference project goals, stakeholders, and deliverables when helpful
+#    - Don't assume projects listed as 'active' are still active if the evidence is old
+#
+# 6. WHAT NOT TO DO
+#    - Do NOT repeat information the user obviously already knows
+#    - Do NOT over-explain topics listed in strongest_areas or proficient_in
+#    - Do NOT treat career_ladder expectations as proven capabilities
+#    - Do NOT reference the profile explicitly (“your profile says...”)
+#    - Do NOT apply a single scoped preference globally (check the scope field)
+#    - Do NOT ignore low-confidence claims — use them as soft guidance
+#
+# 7. CONFIDENCE INTERPRETATION
+#    - 0.9–1.0: User-confirmed or explicitly stated. Treat as strong.
+#    - 0.7–0.9: Repeated behavior or strong evidence. Default to following it.
+#    - 0.5–0.7: Single observation or career-ladder inference. Soft guidance only.
+#    - < 0.5: Tentative. Don't act on it unless corroborated by the conversation.
+#
+# 8. CHRONOLOGICAL AWARENESS
+#    - More recent evidence (last_seen dates) is more relevant
+#    - Skills and projects can change — respect the temporal markers
+#    - If the user contradicts the profile in this conversation, FOLLOW THE USER
+#
+# =============================================================================
+# USER PROFILE BEGINS BELOW:
+# =============================================================================
+
+updated_profiles:
+  level_1_compact:
+    compact_profile:
+      about_user:
+        name: "Mohamad Aboufoul"
+        title: "Senior AI FDE (Level L5)"
+        tenure: "March 2024 - present"
+        works_with:
+          - "AI Field Engineering (AI FDE) team"
+          - "Customer data/AI teams (per ladder expectations)"
+          - "Partners/RSAs (per ladder expectations)"
+          - "Eli Lilly stakeholders (Ryan Eden, Todd, Neeraj, Topher, Amanda/TM team, Swati/Zach W for permissions, Bishwa Karki, Lulu, Kevin, Eric Golinko, Abhi, Nimesh (UI lead), Jamie Costabile (embedding endpoint), Tushar/Akash (bundle/permissions), Luis; plus Shubham/Kira on endpoint/inference-table impacts) on MSL/HOL RAG assistant work (per running notes, 2025-06 through 2026-05)"
+
+      current_focus:
+        active_projects:
+          - "Databricks volume file-curation/organization task: programmatically selecting/deduplicating multilingual documents (prefer _en_EN, fallback es/fr/de/it/ja), copying to a new volume path, and reorganizing folders; scaling to tens of thousands of files (~20k–80k) on serverless (observed 2026-06-29 and 2026-06-30)"
+          - "Data-quality cleanup for a multilingual document ingestion pipeline (IBU version of apply_data_quality_cleanup() in ingestion_utils shared repo): removing arbitrary repeated characters/substrings/lines/paragraphs and TOC/table noise from original + translated text columns across EMA/PMDA/AIFA/DPD/AEMPS/VVMC source tables; optimizing for ~500k rows; downstream goal is a Vector Search index (observed 2026-07-07)"
+          - "Eli Lilly MSL RAG assistant (comm_assist_llm_qa_sc.msl / lusa-aiassistant-datascience repo): VS index re-indexing/upsert logic, filtering improvements (fuzzy-matching experiments, source-structure-aligned query patterns), MARL prompt-category routing + SQL templates, FDA/CT.gov data ingestion, citation reordering/dedup, Databricks Asset Bundle deployment (databricks bundle deploy, profiles/PAT/auth login), and production serving/deployment-workflow debugging — documented in running notes 2025-06-16 through 2025-08-29"
+          - "Eli Lilly HOL (Higher-Order/‘House of Lilly’?) research-agent assistant: newer multi-agent/deep-research architecture (supervisor + sub-agents per source, MCP-server-based tools, planning vs generation models), FDA-label + USPI + CT.gov data, HOL-specific VS index, conversation-history/thread-ID via Lakebase, citation-format updates, and prod-launch prep — documented in running notes 2026-02-18 through 2026-05-27 (most recent thread in the notes)"
+        this_week_objectives:
+          - unknown
+        near_term_objectives:
+          - unknown
+        long_term_objectives:
+          - unknown
+
+      capability_snapshot:
+        strongest_areas: []
+        proficient_in: []
+        developing_in:
+          - "Databricks file/volume operations (dbutils.fs ls/cp/mv, Unity Catalog volumes) — applied across a real multi-day task; recurring focus on move/rename and copy semantics"
+          - "PySpark text-cleanup / data-quality transforms (regexp_replace, split/transform/filter, UDF vs Pandas UDF vs native built-ins trade-offs) — applied to a real ingestion pipeline; iterating on correctness and performance (observed 2026-07-07)"
+          - "End-to-end Databricks Vector Search RAG operations: index re-indexing/upsert strategy, hybrid vs ANN queries, embedding write-back tables, metadata filtering (page_content LIKE, AND-operator limitations, fuzzy-matching entity-variant experiments), Standard vs Storage-Optimized endpoint trade-offs (CMK/HIPAA/incremental-sync constraints), and production model-serving debugging — documented across running notes (2025-06-16 through 2025-08-29)"
+          - "SQL / data-modeling against MARL (Redshift-backed) Veeva views: multi-table joins for prompt-category SQL templates, Veeva 18-char ID semantics, record-type/status filtering, and diagnosing upsert-uniqueness (chunk citation collisions) for the VS index (running notes, 2025-07-21 through 2025-08-11)"
+          - "RAG system-prompt / citation-format design: authoring strict verbatim-answer and source_index citation guidelines, domain-scoping/redirect behavior, citation-deduplication/reordering, and source-block ordering (moving CT.gov block off top) (running notes, chunk 13 + 14)"
+          - "Databricks Asset Bundle deployment & multi-workspace CI/CD: databricks bundle deploy with target_env vars, profile/.databrickscfg/auth-login/PAT setup, name_prefix/run_as/permissions targets, test→dev→QA→stage→prod promotion, manual cleanup+ingest(~18h)+deploy sequencing, and debugging deploy-workflow flakiness (endpoint 'currently updating' ResourceConflict, NoneType served_entities) (running notes, 2025-06-16 through 2025-06-18)"
+          - "LLM agent architecture design: evolving MSL single-chain RAG toward a HOL multi-agent/deep-research pattern (supervisor + per-source sub-agents, MCP-server tools, planning-vs-generation model split, dynamic multi-VS-search, toggleable deep-research mode), managing token/context-window budgets (~130k input) and latency trade-offs (running notes, 2026-02-18 through 2026-05-27)"
+        still_learning:
+          - "Parallelizing/scaling filesystem operations on Databricks serverless compute (recurring concern across conversations; explored ThreadPoolExecutor vs Spark-parallel/Hadoop FileUtil approaches)"
+          - "Scaling Spark string/text transforms over large row counts (~500k); understanding why Python/Pandas UDFs are slow vs native built-ins, and simplifying query plans to reduce per-row work (observed 2026-07-07)"
+          - "Production RAG serving reliability: handling VS query 429 rate-limit/retry storms, async gather concurrency, worker timeouts/OOM in MLflow pyfunc serving; and deploy-workflow race conditions (endpoint still-updating conflicts) (per running notes, 2025-06-18, 2025-08-21)"
+          - "Designing robust upsert/versioning for a RAG document index when source docs are chunked and lack stable unique IDs (rag_docs citation collisions, per-section chunk IDs, deletions unhandled) — per running notes, 2025-07-22 through 2025-07-25"
+          - "Overcoming Standard VS filtering / retrieval limitations (only OR across multi-entity filters, only last filter applied per repeated column key; retrieval sensitive to trial-name formatting like hyphens/spaces) — evaluated Storage-Optimized endpoint (blocked by CMK/HIPAA/full-rebuild-only sync); fuzzy-matching workarounds and source-structure-aligned prompts had only marginal effect; considering reranking (running notes, 2025-06-24 through 2026-06)"
+
+      interaction_guidance:
+        default_response_style: "unknown"
+        by_task:
+          debugging: "When user hits a Spark error (e.g., INVALID_EXTRACT_FIELD_TYPE), give the root cause plus a corrected, complete drop-in version — user applies fixes and continues iterating (single observation)"
+          product_questions: "unknown"
+          architecture: "unknown"
+          project_scoping: "unknown"
+          customer_preparation: "unknown"
+          learning: "When iterating on code across turns, preserve variable names and explicitly connect new code to what was given before; do not silently rename or refactor (single observation, low confidence). User reliably follows up on performance/scale implications — proactively address runtime for large data volumes (multiple observations). User will interrogate specific regex/code lines they don't follow — be ready to explain syntax clearly on request (2026-07-07)"
+        response_pattern_claims:
+          - "User habitually probes performance/runtime after getting a working solution — proactively state whether an approach scales (file counts ~20k–80k, row counts ~500k) and why (three+ observations across 2026-06-29, 2026-06-30, 2026-07-07)"
+
+      active_threads:
+        - "Multilingual document curation & folder organization on Databricks volumes at scale (~20k–80k files) — serverless, PySpark-preferred"
+        - "Data-quality text cleanup for multilingual document ingestion pipeline (IBU apply_data_quality_cleanup) at ~500k rows — PySpark-native preferred, feeding a Vector Search index"
+        - "Eli Lilly MSL RAG assistant productionization — VS re-indexing/upsert, filtering/fuzzy-matching and endpoint-type evaluation, MARL prompt-category routing + SQL templates, FDA/CT.gov ingestion, citation-format/system-prompt design, Asset Bundle deployment/CI-CD, serving stability (running-notes context, Jun–Aug 2025)"
+        - "Eli Lilly HOL research-agent assistant — multi-agent/deep-research architecture, MCP-server tools, planning-vs-generation model split, FDA-label/USPI/CT.gov data, conversation-history via Lakebase, prod-launch prep (running-notes context, Feb–May 2026; most recent activity in notes)"
+
+      runtime_rules:
+        answer_the_underlying_goal: true
+        avoid_repeating_known_context: true
+        surface_uncertainty_when_profile_is_weak: true
+
+  level_2_detailed:
+    detailed_profile:
+      about_me:
+        name: "Mohamad Aboufoul"
+        title: "Senior AI FDE (Level L5)"
+        tenure: "March 2024 - present"
+        team: "AI Field Engineering (AI FDE)"
+        works_with:
+          internal: []
+          customer_or_external:
+            - "Eli Lilly stakeholders named in running notes: Ryan Eden (prompt categories/filter spreadsheet; MSL prompt-field confirmation; gathers MSL feedback), Todd (MARL SQL for recommended-call/prompt 2), Neeraj (MARL data / prompt categories), Topher (PubMed full-text VS index; upsert logic; conversation-history/thread system; MCP-server utility functions), Amanda (TM team; user/territory ID lookup; medicine data dictionary / alternate-name handling; shares code), Swati / Zach W (service-principal permissions to MARL tables; stage/prod change requests), Bishwa Karki (CT.gov chunking; FDA field-as-document proposal; year-data PRs), Lulu & Kevin (pydantic citation approach; LVA endpoint; dashboard work), Eric Golinko (local-testing/bundle-deploy method; reindexing guidance; delete-logic/HOL deployment patterns; contact intro with Abhi), Abhi Wegad (wants MSL response format to match TM; databricks_output field), Nimesh (Lilly-side UI lead — maintenance banner during reindex), Jamie Costabile (shared gte embedding endpoint spin-up), Tushar Tank / Akash Verma (bundle run_as/permissions patterns), Luis (TM endpoint), Shubham / Kira (endpoint/inference-table/dashboard impacts of _v2 endpoint) — MSL/HOL RAG assistant work, 2025-06 through 2026-05"
+        role_summary: "Senior AI Field Engineer expected to define technical direction for customers by designing, documenting, and implementing end-to-end AI solutions. Per career ladder, scope includes developing production-grade AI systems, architecting solutions across Databricks-native and other tools, leading small teams of partners and/or customer teams, and serving as a trusted advisor to customer data teams. Behavioral evidence shows hands-on Databricks data-engineering work (volume file operations, folder reorganization, PySpark text-cleanup transforms, scaling concerns) in a pharmaceutical/regulatory-document context (2026-06-29 through 2026-07-07), plus extensive running notes (2025-06 through 2026-05) documenting end-to-end ownership of Eli Lilly MSL and HOL RAG assistants: VS index management/upsert, filtering strategy (fuzzy-matching experiments, endpoint-type evaluation, reranking consideration), MARL prompt-category routing and SQL template authoring, FDA/CT.gov/USPI ingestion, RAG system-prompt/citation-format design, data dictionaries/ontology, multi-agent/deep-research architecture with MCP-server tooling, Databricks Asset Bundle deployment and multi-workspace CI/CD, production serving/debugging, and change-management (ServiceNow CRs, JIRA LUSD stories, PRs, Wave 1-4 roadmap), with significant cross-team stakeholder coordination."
+
+      objectives:
+        this_week: []
+        near_term: []
+        long_term: []
+
+      capability_model:
+        technical:
+          - area: "Databricks volume/file operations"
+            evidence: "Worked through a real task using dbutils.fs.ls/cp/mkdirs on Unity Catalog volume paths; asked about renaming folders (dbutils.fs.mv semantics) across a follow-up conversation; understood selection logic and questioned code continuity"
+            status: "emerging"
+            confidence: 0.45
+            first_seen: "2026-06-29"
+            last_seen: "2026-06-30"
+          - area: "Scaling filesystem operations (serverless)"
+            evidence: "Recognized sequential per-file copy over ~80k files was too slow (2026-06-29) and independently probed whether folder move over ~20k files would be slow (2026-06-30) — consistently attends to runtime at scale; evaluated parallelization options but constrained by serverless + PySpark-only preference"
+            status: "still_learning"
+            confidence: 0.4
+            first_seen: "2026-06-29"
+            last_seen: "2026-06-30"
+          - area: "PySpark text-cleanup / data-quality transforms"
+            evidence: "Brought a real, functioning-but-slow UDF-based text cleaner and iterated toward a Spark-native / Pandas-UDF pipeline for removing arbitrary repeated characters/substrings/lines/paragraphs and TOC/table noise across original + translated columns; correctly scoped requirements (exact matches only, preserve near-duplicates), debugged a Spark array/lambda error, and refined for edge cases (token-level repeats). Shows working understanding, still learning performance optimization at scale."
+            status: "emerging"
+            confidence: 0.5
+            first_seen: "2026-07-07"
+            last_seen: "2026-07-07"
+          - area: "Scaling Spark string/text transforms (large row counts)"
+            evidence: "Repeatedly pushed on runtime for ~500k rows ('This is still taking way too long', 'It's been ~8 min already'), steering the assistant away from Python/Pandas UDFs toward native built-ins and simpler query plans; understands UDF Python-boundary overhead as a slowness cause"
+            status: "still_learning"
+            confidence: 0.45
+            first_seen: "2026-07-07"
+            last_seen: "2026-07-07"
+          - area: "Databricks Vector Search metadata-filtering semantics"
+            evidence: "Running notes (2025-06-24 through 2026-06) document detailed empirical findings on VS 'page_content LIKE' filtering: list vs bare-value syntax; case-insensitive matching; ignores injected chars ('----') but requires literal hyphens (CTN-0030 matches, CTN0030 does not). Chunk 13/14 add: repeating same column key applies only last filter; Standard VS supports only OR across multi-entity filters (a core multi-entity retrieval blocker, e.g., 'Acclaim Lp(a)' AND 'Horizon'); retrieval highly sensitive to trial-name formatting (hyphens/spaces — 'surmount-mmo' vs 'Surmount MMO'); acronym extraction (get_acronym forcing all-caps) and source-specific get_vs_filter logic. Building diagnostic tables (original vs adjusted query -> results/citations) to isolate backend cause; considering reranking. Applied-but-empirical experimentation, not verified mastery."
+            status: "emerging"
+            confidence: 0.5
+            first_seen: "2025-06-24"
+            last_seen: "2026-06"
+          - area: "End-to-end RAG pipeline / VS index lifecycle ownership"
+            evidence: "Running notes (2025-06-16 through 2026-05-27) document hands-on ownership of MSL/HOL RAG assistants: re-indexing around a new primary key (document_unique_id); staging re-index and QA-index hard-reset via pipelines; adding CT.gov/FDA/USPI/PubMed data; upsert-vs-append logic; per-source processing notebooks; hybrid over ANN queries; embedding write-back tables; Llama 3.3->4 and GPT-OSS-120B model usage; citation reordering/dedup and source-block ordering. Chunk 13/14 add: FDA ingestion planning (~4.15M parsed rows, field-as-document chunking), separate HOL-specific VS index pulling more field_medical directories (6 vs 2), split HOL/MSL permissions, add_query_medical_context() query broadening, and reindex operational coordination (Nimesh UI banner, Jamie shared gte embedding endpoint spin-up, ~half-day rebuild). Applied engineering, documented in notes."
+            status: "emerging"
+            confidence: 0.65
+            first_seen: "2025-06-16"
+            last_seen: "2026-05-27"
+          - area: "RAG document-index upsert / versioning design (chunked docs, ID uniqueness)"
+            evidence: "Running notes (2025-07-09 through 2025-07-25) diagnose a nuanced upsert problem: rag_docs keyed on citation, but chunked documents share citations so upsert appends instead of updating; CT.gov nct_id 1:1 with citation and not chunk-unique; explored natural sections or a 'chunk number' subsection for VVMC/USPI; deletions remain unhandled. Chunk 13 adds citation-dedup/reordering feature work and mapping rag_docs fields to FDA source columns. Sophisticated applied reasoning about identity/versioning in a production index; documented in notes."
+            status: "emerging"
+            confidence: 0.5
+            first_seen: "2025-07-09"
+            last_seen: "2025-07-25"
+          - area: "Production model-serving debugging (MLflow pyfunc / async / rate limits / deploy workflows)"
+            evidence: "Captured a full production stack trace (2025-08-21): VS similarity_search hitting 'too many 429 error responses' via RequestUtils retry storms inside asyncio.gather/to_thread concurrency, cascading to MLflow scoring-server worker timeout and SIGKILL (possible OOM); tracked local-vs-endpoint-vs-UC-model output drift suspected as library-version drift. Chunk 14 adds deploy-workflow debugging: test_msl_deploy_assistant repeatedly failing with 'Endpoint ... is currently updating' ResourceConflict and 'NoneType object has no attribute served_entities' at the deploy step, retry-scheduler behavior, and awareness that the deploy command itself is supposed to update the endpoint. Adopting Eric's HOL delete-logic pattern (examine error codes, tuned timeouts, 30-min total retry) to stabilize MSL deploys. Exposure to diagnosing concurrency/rate-limit/serving-stability and deployment race conditions; depth of resolution partially evidenced."
+            status: "still_learning"
+            confidence: 0.45
+            first_seen: "2025-08-01"
+            last_seen: "2025-08-21"
+          - area: "SQL/warehouse & materialized-view engineering on Databricks (Redshift/MARL integration)"
+            evidence: "Notes (2025-07-21 through 2025-08-18) document extensive applied SQL work against MARL Redshift-backed Veeva views: multi-table join SQL templates for top-3 priority prompts; Veeva 18-char ID uniqueness; record_type/status filters; null recommended_next_interaction behavior; TABLE NOT FOUND on _vw objects. Hit concrete blockers: JDBC serverless-access limits to Redshift-connected tables, 'Materialized views cannot be defined on late binding views' (pro warehouse needed to query Redshift while only serverless builds MVs), service-principal permission gaps. Tuned databricks-sql-connector[pyarrow]==4.0.3, use_cloud_fetch=True, persistent cursor. Weighing delta tables + daily refresh vs materialized views. Substantial applied data-engineering; documented in notes."
+            status: "emerging"
+            confidence: 0.5
+            first_seen: "2025-07-21"
+            last_seen: "2025-08-18"
+          - area: "LLM query routing & structured-output design (MARL router, prompt catalog, ontology)"
+            evidence: "Notes (2025-06-25 through 2026-04) show design of a router layer to decide VS vs MARL and prompt-catalog category, with per-category base SQL and WHERE-clause tools; considered LLM building only the WHERE clause (pydantic for column selection) and a CT.gov ontology / LITLENS relational text-to-query ontology API. Chunk 13/14 add MSL Wave 1-4 roadmap (Scientific Questions Chain vs Medical Engagement Planning Agent routing; agentic SQL-tool routing following TM), concrete Wave-2 prompt examples, and HCP-search/no-match handling. Applied design/architecture reasoning documented in notes."
+            status: "emerging"
+            confidence: 0.45
+            first_seen: "2025-06-25"
+            last_seen: "2026-04"
+          - area: "RAG system-prompt / citation-format design"
+            evidence: "Chunk 13 contains a detailed MSL system prompt: strict source_index citation format ('response[x]', citations table final section, matching bracket numbers), verbatim-and-concise constraints, domain-scoping/redirect, greeting/help behavior, worked Enhertu example. Chunk 14 adds cross-assistant response-format alignment work (matching MSL output to TM's newer format, adding databricks_output field to the response payload) and source-block reordering (move CT.gov block from top to bottom). Applied prompt/response-format engineering; documented in notes."
+            status: "emerging"
+            confidence: 0.45
+            first_seen: "2025-07-16"
+            last_seen: "2025-06-17"
+          - area: "Change management / production release governance"
+            evidence: "Chunk 13 documents ServiceNow CRs (CHG2626341, CHG2626336) with Develop/Deploy/Backout plans, GitHub PR/CI-CD across Dev/QA/Stage/Prod, JIRA LUSD stories, sprint-based release timing, endpoint versioning (_v2 signature change affecting inference tables/dashboards). Chunk 14 adds concrete assigned JIRA tickets (LUS

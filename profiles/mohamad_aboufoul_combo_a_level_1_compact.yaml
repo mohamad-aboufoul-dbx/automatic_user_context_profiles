@@ -1,0 +1,176 @@
+# User: Mohamad Aboufoul
+# Profile: level_1_compact | Data source: Cold-start only
+# Generated: 2026-08-28T00:40:25.718389
+# Model: databricks-claude-opus-4-8
+# Source: ai_fde_hackathon_catalog.automatic_user_context_profiles.profile_checkpoints_v2
+
+# =============================================================================
+# USER CONTEXT PROFILE — INSTRUCTIONS FOR AGENT
+# =============================================================================
+# The YAML block that follows this prefix is a structured user context profile.
+# It was built incrementally from career metadata, conversation history, and
+# authored documents. Use it to personalize your responses WITHOUT requiring
+# the user to re-explain their background, preferences, or active work.
+#
+# HOW TO USE THIS PROFILE:
+#
+# 1. IDENTITY & CONTEXT
+#    - Refer to the user by name when natural
+#    - Understand their role, team, and tenure to calibrate formality and depth
+#    - Reference their active projects/threads when relevant to the question
+#
+# 2. CAPABILITY SNAPSHOT
+#    - strongest_areas: Skip basic explanations for these topics
+#    - proficient_in: Can handle intermediate discussion without preamble
+#    - developing_in: Explain concepts but respect they have some context
+#    - still_learning: Provide clear explanations, examples, and check understanding
+#
+# 3. INTERACTION GUIDANCE
+#    - Follow the by_task preferences (e.g., "debugging: concise", "learning: adaptive")
+#    - Apply response_pattern_claims — these are TESTED patterns from real interactions
+#    - Respect the preferred_structure and avoid patterns listed under each claim
+#    - When a claim has confidence > 0.8, treat it as a strong preference
+#    - When confidence is 0.5–0.7, treat as a suggestion, not a rule
+#
+# 4. RESPONSE PATTERNS (from interaction_outcomes)
+#    - If the profile lists failure_modes for a task type, AVOID those patterns
+#    - If repair_strategies are listed, APPLY them proactively
+#    - Common failure modes:
+#        buried_answer: Put the direct answer FIRST, details after
+#        too_verbose: Be concise; let the user ask for more
+#        too_basic: Skip fundamentals they already know
+#        wrong_assumption: Check the profile's knowledge section before assuming
+#        missing_example: Include a concrete example when explaining
+#        premature_solutioning: Understand the problem before proposing fixes
+#
+# 5. ACTIVE THREADS & PROJECTS
+#    - If the user's question relates to a listed active_thread, pull in that context
+#    - Reference project goals, stakeholders, and deliverables when helpful
+#    - Don't assume projects listed as 'active' are still active if the evidence is old
+#
+# 6. WHAT NOT TO DO
+#    - Do NOT repeat information the user obviously already knows
+#    - Do NOT over-explain topics listed in strongest_areas or proficient_in
+#    - Do NOT treat career_ladder expectations as proven capabilities
+#    - Do NOT reference the profile explicitly (“your profile says...”)
+#    - Do NOT apply a single scoped preference globally (check the scope field)
+#    - Do NOT ignore low-confidence claims — use them as soft guidance
+#
+# 7. CONFIDENCE INTERPRETATION
+#    - 0.9–1.0: User-confirmed or explicitly stated. Treat as strong.
+#    - 0.7–0.9: Repeated behavior or strong evidence. Default to following it.
+#    - 0.5–0.7: Single observation or career-ladder inference. Soft guidance only.
+#    - < 0.5: Tentative. Don't act on it unless corroborated by the conversation.
+#
+# 8. CHRONOLOGICAL AWARENESS
+#    - More recent evidence (last_seen dates) is more relevant
+#    - Skills and projects can change — respect the temporal markers
+#    - If the user contradicts the profile in this conversation, FOLLOW THE USER
+#
+# =============================================================================
+# USER PROFILE BEGINS BELOW:
+# =============================================================================
+
+compact_profile:
+  about_user:
+    name: "Mohamad Aboufoul"
+    title: "Senior AI FDE (Level L5)"
+    tenure: "March 2024 - present"
+    works_with:
+      - "AI Field Engineering (AI FDE) team"
+      - "Customer data/AI teams (per ladder expectations)"
+      - "Partners/RSAs (per ladder expectations)"
+
+  current_focus:
+    active_projects:
+      - unknown
+    this_week_objectives:
+      - unknown
+    near_term_objectives:
+      - unknown
+    long_term_objectives:
+      - unknown
+
+  capability_snapshot:
+    # NOTE: The following reflect EXPECTED L5 scope from the career ladder,
+    # NOT verified individual capabilities. No behavioral evidence exists (cold-start).
+    strongest_areas: []
+    proficient_in: []
+    developing_in: []
+    still_learning: []
+
+  interaction_guidance:
+    default_response_style: "unknown"
+    by_task:
+      debugging: "unknown"
+      product_questions: "unknown"
+      architecture: "unknown"
+      project_scoping: "unknown"
+      customer_preparation: "unknown"
+      learning: "unknown"
+    response_pattern_claims: []
+
+  active_threads: []
+
+  runtime_rules:
+    answer_the_underlying_goal: true
+    avoid_repeating_known_context: true
+    surface_uncertainty_when_profile_is_weak: true
+
+evidence_records:
+  - type: career_ladder_baseline
+    capability: "Technical Leadership"
+    description: "Expected to define technical direction for customers; design, document, and implement end-to-end AI solutions"
+    source: "AI FDE Career Ladder L5"
+    confidence: 0.5
+    note: "Ladder expectation, not proven capability"
+  - type: career_ladder_baseline
+    capability: "Technical Acumen"
+    description: "Expected to develop production-grade AI systems and architect solutions, choosing best tool (Databricks native or otherwise)"
+    source: "AI FDE Career Ladder L5"
+    confidence: 0.5
+    note: "Ladder expectation, not proven capability"
+  - type: career_ladder_baseline
+    capability: "Technical Specialization"
+    description: "Expected L400 knowledge of GenAI, ML/DL, and MLOps"
+    source: "AI FDE Career Ladder L5"
+    confidence: 0.5
+    note: "Ladder expectation, not proven capability"
+  - type: career_ladder_baseline
+    capability: "Project Leadership"
+    description: "Expected to establish Databricks as the AI Platform (references, blog posts); lead small teams of partners/customers with technical direction and execution plans; assist in hiring"
+    source: "AI FDE Career Ladder L5"
+    confidence: 0.5
+    note: "Ladder expectation, not proven capability"
+  - type: career_ladder_baseline
+    capability: "Customer Relationship Management"
+    description: "Expected to build trusted advisor relationships with immediate customer teams"
+    source: "AI FDE Career Ladder L5"
+    confidence: 0.5
+    note: "Ladder expectation, not proven capability"
+  - type: career_ladder_baseline
+    capability: "Customer Engagements"
+    description: "Expected to context-switch across multiple engagements, handle standard-complexity requests independently, and manage more complex delivery (e.g., co-delivery with Partners/RSAs)"
+    source: "AI FDE Career Ladder L5"
+    confidence: 0.5
+    note: "Ladder expectation, not proven capability"
+  - type: career_ladder_baseline
+    capability: "Trusted Advisor"
+    description: "Expected to serve as trusted advisor to customer data teams as an embedded AI Engineer"
+    source: "AI FDE Career Ladder L5"
+    confidence: 0.5
+    note: "Ladder expectation, not proven capability"
+
+metadata:
+  profile_level: 1
+  profile_type: compact
+  initialization_mode: cold_start
+  evidence_basis: "career_ladder_metadata_only"
+  history_available: false
+  documents_available: false
+  behavioral_evidence: false
+  generated_on: "2026-08-27"
+  caveats:
+    - "All capability records are ladder-derived expectations at confidence ~0.5, not demonstrated skills."
+    - "current_focus, active_threads, interaction_guidance, and preferences are unknown pending real signals."
+    - "No personality, communication style, or active work has been inferred."

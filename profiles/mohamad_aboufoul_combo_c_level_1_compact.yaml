@@ -1,0 +1,125 @@
+# User: Mohamad Aboufoul
+# Profile: level_1_compact | Data source: Cold-start + Chat + Docs (iterative)
+# Generated: 2026-08-28T02:06:52.809671
+# Model: databricks-claude-opus-4-8
+# Source: ai_fde_hackathon_catalog.automatic_user_context_profiles.profile_checkpoints_v2
+
+# =============================================================================
+# USER CONTEXT PROFILE — INSTRUCTIONS FOR AGENT
+# =============================================================================
+# The YAML block that follows this prefix is a structured user context profile.
+# It was built incrementally from career metadata, conversation history, and
+# authored documents. Use it to personalize your responses WITHOUT requiring
+# the user to re-explain their background, preferences, or active work.
+#
+# HOW TO USE THIS PROFILE:
+#
+# 1. IDENTITY & CONTEXT
+#    - Refer to the user by name when natural
+#    - Understand their role, team, and tenure to calibrate formality and depth
+#    - Reference their active projects/threads when relevant to the question
+#
+# 2. CAPABILITY SNAPSHOT
+#    - strongest_areas: Skip basic explanations for these topics
+#    - proficient_in: Can handle intermediate discussion without preamble
+#    - developing_in: Explain concepts but respect they have some context
+#    - still_learning: Provide clear explanations, examples, and check understanding
+#
+# 3. INTERACTION GUIDANCE
+#    - Follow the by_task preferences (e.g., "debugging: concise", "learning: adaptive")
+#    - Apply response_pattern_claims — these are TESTED patterns from real interactions
+#    - Respect the preferred_structure and avoid patterns listed under each claim
+#    - When a claim has confidence > 0.8, treat it as a strong preference
+#    - When confidence is 0.5–0.7, treat as a suggestion, not a rule
+#
+# 4. RESPONSE PATTERNS (from interaction_outcomes)
+#    - If the profile lists failure_modes for a task type, AVOID those patterns
+#    - If repair_strategies are listed, APPLY them proactively
+#    - Common failure modes:
+#        buried_answer: Put the direct answer FIRST, details after
+#        too_verbose: Be concise; let the user ask for more
+#        too_basic: Skip fundamentals they already know
+#        wrong_assumption: Check the profile's knowledge section before assuming
+#        missing_example: Include a concrete example when explaining
+#        premature_solutioning: Understand the problem before proposing fixes
+#
+# 5. ACTIVE THREADS & PROJECTS
+#    - If the user's question relates to a listed active_thread, pull in that context
+#    - Reference project goals, stakeholders, and deliverables when helpful
+#    - Don't assume projects listed as 'active' are still active if the evidence is old
+#
+# 6. WHAT NOT TO DO
+#    - Do NOT repeat information the user obviously already knows
+#    - Do NOT over-explain topics listed in strongest_areas or proficient_in
+#    - Do NOT treat career_ladder expectations as proven capabilities
+#    - Do NOT reference the profile explicitly (“your profile says...”)
+#    - Do NOT apply a single scoped preference globally (check the scope field)
+#    - Do NOT ignore low-confidence claims — use them as soft guidance
+#
+# 7. CONFIDENCE INTERPRETATION
+#    - 0.9–1.0: User-confirmed or explicitly stated. Treat as strong.
+#    - 0.7–0.9: Repeated behavior or strong evidence. Default to following it.
+#    - 0.5–0.7: Single observation or career-ladder inference. Soft guidance only.
+#    - < 0.5: Tentative. Don't act on it unless corroborated by the conversation.
+#
+# 8. CHRONOLOGICAL AWARENESS
+#    - More recent evidence (last_seen dates) is more relevant
+#    - Skills and projects can change — respect the temporal markers
+#    - If the user contradicts the profile in this conversation, FOLLOW THE USER
+#
+# =============================================================================
+# USER PROFILE BEGINS BELOW:
+# =============================================================================
+
+level_1_compact:
+    compact_profile:
+      about_user:
+        name: "Mohamad Aboufoul"
+        title: "Senior AI FDE (Level L5)"
+        tenure: "March 2024 - present"
+        works_with:
+          - "AI Field Engineering (AI FDE) team"
+          - "Customer data/AI teams (per ladder expectations)"
+          - "Partners/RSAs (per ladder expectations)"
+
+      current_focus:
+        active_projects:
+          - "Databricks volume file-curation/organization task: programmatically selecting/deduplicating multilingual documents (prefer _en_EN, fallback es/fr/de/it/ja), copying to a new volume path, and reorganizing folders; scaling to tens of thousands of files (~20k–80k) on serverless (observed 2026-06-29 and 2026-06-30)"
+          - "Data-quality cleanup for a multilingual document ingestion pipeline (IBU version of apply_data_quality_cleanup() in ingestion_utils shared repo): removing arbitrary repeated characters/substrings/lines/paragraphs and TOC/table noise from original + translated text columns across EMA/PMDA/AIFA/DPD/AEMPS/VVMC source tables; optimizing for ~500k rows; downstream goal is a Vector Search index (observed 2026-07-07)"
+        this_week_objectives:
+          - unknown
+        near_term_objectives:
+          - unknown
+        long_term_objectives:
+          - unknown
+
+      capability_snapshot:
+        strongest_areas: []
+        proficient_in: []
+        developing_in:
+          - "Databricks file/volume operations (dbutils.fs ls/cp/mv, Unity Catalog volumes) — applied across a real multi-day task; recurring focus on move/rename and copy semantics"
+          - "PySpark text-cleanup / data-quality transforms (regexp_replace, split/transform/filter, UDF vs Pandas UDF vs native built-ins trade-offs) — applied to a real ingestion pipeline; iterating on correctness and performance (observed 2026-07-07)"
+        still_learning:
+          - "Parallelizing/scaling filesystem operations on Databricks serverless compute (recurring concern across conversations; explored ThreadPoolExecutor vs Spark-parallel/Hadoop FileUtil approaches)"
+          - "Scaling Spark string/text transforms over large row counts (~500k); understanding why Python/Pandas UDFs are slow vs native built-ins, and simplifying query plans to reduce per-row work (observed 2026-07-07)"
+
+      interaction_guidance:
+        default_response_style: "unknown"
+        by_task:
+          debugging: "When user hits a Spark error (e.g., INVALID_EXTRACT_FIELD_TYPE), give the root cause plus a corrected, complete drop-in version — user applies fixes and continues iterating (single observation)"
+          product_questions: "unknown"
+          architecture: "unknown"
+          project_scoping: "unknown"
+          customer_preparation: "unknown"
+          learning: "When iterating on code across turns, preserve variable names and explicitly connect new code to what was given before; do not silently rename or refactor (single observation, low confidence). User reliably follows up on performance/scale implications — proactively address runtime for large data volumes (multiple observations). User will interrogate specific regex/code lines they don't follow — be ready to explain syntax clearly on request (2026-07-07)"
+        response_pattern_claims:
+          - "User habitually probes performance/runtime after getting a working solution — proactively state whether an approach scales (file counts ~20k–80k, row counts ~500k) and why (three+ observations across 2026-06-29, 2026-06-30, 2026-07-07)"
+
+      active_threads:
+        - "Multilingual document curation & folder organization on Databricks volumes at scale (~20k–80k files) — serverless, PySpark-preferred"
+        - "Data-quality text cleanup for multilingual document ingestion pipeline (IBU apply_data_quality_cleanup) at ~500k rows — PySpark-native preferred, feeding a Vector Search index"
+
+      runtime_rules:
+        answer_the_underlying_goal: true
+        avoid_repeating_known_context: true
+        surface_uncertainty_when_profile_is_weak: true
