@@ -300,6 +300,40 @@ if dims != [EXPECTED_DIM]:
         f"DIMENSION ASSERTION FAILED: expected exactly [{EXPECTED_DIM}], got {dims}"
     )
 print(f"PASS: all vectors are {EXPECTED_DIM}-dimensional.")
+observed_dim = dims[0]
+
+
+# COMMAND ----------
+
+# MAGIC %md ## Contamination re-assert — ZERO held-out/cluster rows in atomic_memories
+
+# COMMAND ----------
+
+# Build the banned-id set as a temp view and count matches by join (no string
+# interpolation of ids into SQL). MUST be exactly 0. This guard runs BEFORE any
+# dedup DELETE so it is never skipped by a row removal.
+banned_df = spark.createDataFrame(   # noqa: F821
+    [(cid,) for cid in sorted(BANNED_IDS)],
+    schema=StructType([StructField("conversation_id", StringType(), False)]),
+)
+banned_df.createOrReplaceTempView("_banned_conversation_ids")
+
+heldout_rows = spark.sql(f"""  # noqa: F821
+    SELECT COUNT(*) AS n
+    FROM {ATOMIC_TBL} m
+    JOIN _banned_conversation_ids b
+      ON m.conversation_id = b.conversation_id
+""").first()["n"]
+
+print(f"Held-out/cluster rows present in atomic_memories: {heldout_rows}")
+# Explicit raise (NOT assert): asserts are stripped under python -O/-OO, and this
+# is the backstop that protects the shared atomic_memories table.
+if heldout_rows != 0:
+    raise RuntimeError(
+        f"CONTAMINATION: {heldout_rows} atomic_memories rows reference held-out/cluster "
+        "conversation_ids. Embedding run is invalid — refusing to certify this run."
+    )
+print("PASS: zero held-out/cluster contamination in atomic_memories.")
 
 
 # COMMAND ----------
@@ -328,13 +362,22 @@ def _choose_keeper(ri, rj):
     """Return (keep_row, drop_row) for a near-duplicate pair.
 
     Priority: highest confidence → higher source_datetime → lex-smallest memory_id.
+    None timestamps are treated as "earliest" so a row with a real timestamp always
+    beats one with NULL (no TypeError on legacy NULL source_datetime values).
     """
     ci, cj = float(ri["confidence"]), float(rj["confidence"])
     di, dj = ri["source_datetime"], rj["source_datetime"]
     ii, ij = ri["memory_id"], rj["memory_id"]
     if ci != cj:
         return (ri, rj) if ci > cj else (rj, ri)
-    if di != dj:
+    # Null-safe datetime comparison: None < any real timestamp.
+    if di is None and dj is None:
+        pass  # treat as equal, fall through to memory_id tie-break
+    elif di is None:
+        return (rj, ri)   # rj has a timestamp → prefer rj
+    elif dj is None:
+        return (ri, rj)   # ri has a timestamp → prefer ri
+    elif di != dj:
         return (ri, rj) if di > dj else (rj, ri)
     # Tie on both: lex-smallest memory_id is the keeper
     return (ri, rj) if ii <= ij else (rj, ri)
@@ -396,38 +439,6 @@ else:
 
 # COMMAND ----------
 
-# MAGIC %md ## Contamination re-assert — ZERO held-out/cluster rows in atomic_memories
-
-# COMMAND ----------
-
-# Build the banned-id set as a temp view and count matches by join (no string
-# interpolation of ids into SQL). MUST be exactly 0.
-banned_df = spark.createDataFrame(   # noqa: F821
-    [(cid,) for cid in sorted(BANNED_IDS)],
-    schema=StructType([StructField("conversation_id", StringType(), False)]),
-)
-banned_df.createOrReplaceTempView("_banned_conversation_ids")
-
-heldout_rows = spark.sql(f"""  # noqa: F821
-    SELECT COUNT(*) AS n
-    FROM {ATOMIC_TBL} m
-    JOIN _banned_conversation_ids b
-      ON m.conversation_id = b.conversation_id
-""").first()["n"]
-
-print(f"Held-out/cluster rows present in atomic_memories: {heldout_rows}")
-# Explicit raise (NOT assert): asserts are stripped under python -O/-OO, and this
-# is the backstop that protects the shared atomic_memories table.
-if heldout_rows != 0:
-    raise RuntimeError(
-        f"CONTAMINATION: {heldout_rows} atomic_memories rows reference held-out/cluster "
-        "conversation_ids. Embedding run is invalid — refusing to certify this run."
-    )
-print("PASS: zero held-out/cluster contamination in atomic_memories.")
-
-
-# COMMAND ----------
-
 # Sentinel: must be the last thing that executes. The runner validates the
 # "sentinel" field via scripts/_check_sentinel.py.
 sentinel_payload = {
@@ -436,7 +447,7 @@ sentinel_payload = {
     "stage":          "embed",
     "embedded":       embedded_count,
     "remaining_null": remaining_null,
-    "dim":            EXPECTED_DIM,
+    "dim":            observed_dim,
     "dedup_enabled":  DEDUP_ENABLED,
     "dropped_dupes":  len(dropped_dupes),
     "heldout_rows":   heldout_rows,
