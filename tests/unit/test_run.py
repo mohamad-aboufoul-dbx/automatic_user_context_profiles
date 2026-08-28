@@ -30,6 +30,7 @@ from harness.run import (
     AgentRunResult,
     EvalRunRow,
     _build_insert_sql,
+    _capture_working_tree_state,
     _check_forbidden_unchanged,
     _extract_sentinel_observed,
     _parse_agent_echo,
@@ -63,6 +64,7 @@ def _make_agent_result(
     total_tool_calls: int = 5,
     stopped_reason: Optional[str] = "agent_exit",
     trace: Optional[list[dict]] = None,
+    raw_events: Optional[list[dict]] = None,
     tokens_in: int = 100,
     tokens_out: int = 50,
     elapsed: float = 10.0,
@@ -78,6 +80,7 @@ def _make_agent_result(
         final_commit=final_commit,
         exit_code=0,
         stopped_reason=stopped_reason,
+        raw_events=raw_events or [],
     )
 
 
@@ -793,6 +796,7 @@ class TestRunOneBudget:
                 final_commit="deadbeef",
                 exit_code=0,
                 stopped_reason="agent_exit",
+                raw_events=[],
             )
 
         row = run_one(
@@ -890,6 +894,7 @@ class TestRunOneBudget:
                 final_commit=None,
                 exit_code=-1,
                 stopped_reason="budget_minutes",
+                raw_events=[],
             )
 
         row = run_one(
@@ -935,6 +940,7 @@ class TestRunOneBudget:
                 final_commit="deadbeef",
                 exit_code=0,
                 stopped_reason="agent_exit",
+                raw_events=[],
             )
 
         row = run_one(
@@ -1051,6 +1057,7 @@ class TestRunOneRowAssembly:
                 final_commit="cafebabe",
                 exit_code=0,
                 stopped_reason="agent_exit",
+                raw_events=[],
             )
 
         row = run_one(
@@ -1807,16 +1814,18 @@ class TestUploadToVolumeMkdir:
             upload_fn=recording_upload,
         )
 
-        # Both transcript and diff were uploaded
-        assert len(cp_calls) == 2
+        # Three files uploaded: transcript.jsonl (raw events), trace.jsonl (reduced), final.diff
+        assert len(cp_calls) == 3
         transcript_uploads = [v for v in cp_calls if v.endswith("transcript.jsonl")]
+        trace_uploads = [v for v in cp_calls if v.endswith("trace.jsonl")]
         diff_uploads = [v for v in cp_calls if v.endswith("final.diff")]
         assert len(transcript_uploads) == 1
+        assert len(trace_uploads) == 1
         assert len(diff_uploads) == 1
 
-        # Parent dir recorded for both uploads (proves mkdir-before-cp contract
+        # Parent dir recorded for all three uploads (proves mkdir-before-cp contract
         # is applied at the upload_fn level)
-        assert len(mkdir_calls) == 2
+        assert len(mkdir_calls) == 3
         for parent in mkdir_calls:
             # Parent should be the run_id directory, not the file itself
             assert not parent.endswith(".jsonl")
@@ -1951,4 +1960,301 @@ class TestSentinelAckPreamble:
         import re
         assert not re.search(r'\bmem-[a-z0-9]', SENTINEL_ACK_PREAMBLE), (
             "Preamble must not embed a mem-... sentinel value"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Tests: Fix A — working-tree diff + forbidden check
+# ---------------------------------------------------------------------------
+
+class TestWorkingTreeCapture:
+    """Fix A: _capture_working_tree_state and _check_forbidden_unchanged use
+    git add -A + --cached to catch uncommitted / untracked changes."""
+
+    def _make_wt(self, platform_repo, starting_commit, suffix):
+        wt = os.path.join(os.path.dirname(platform_repo), f"wt_{suffix}")
+        subprocess.run(
+            ["git", "worktree", "add", wt, starting_commit],
+            cwd=platform_repo, check=True, capture_output=True,
+        )
+        return wt
+
+    def _rm_wt(self, platform_repo, wt):
+        subprocess.run(
+            ["git", "worktree", "remove", "--force", wt],
+            cwd=platform_repo, capture_output=True,
+        )
+
+    def test_new_untracked_file_appears_in_diff(self, fake_git_repo):
+        """Agent creates a NEW untracked file in an allowed dir → captured diff is
+        non-empty and the file name appears in the changed set. (Fix A, case 1)"""
+        platform_repo, starting_commit = fake_git_repo
+        wt = self._make_wt(platform_repo, starting_commit, "untracked_new")
+        try:
+            # Create a new file in an allowed directory WITHOUT committing
+            new_file_rel = "src/new_module.py"
+            new_file_abs = os.path.join(wt, new_file_rel)
+            os.makedirs(os.path.dirname(new_file_abs), exist_ok=True)
+            with open(new_file_abs, "w") as f:
+                f.write("# new module created by agent\n")
+
+            diff_text, changed_set = _capture_working_tree_state(wt, starting_commit)
+
+            assert diff_text.strip() != "", (
+                "Diff must be non-empty when the agent created a new untracked file"
+            )
+            assert any("new_module.py" in p for p in changed_set), (
+                f"new_module.py must appear in changed_set; got {changed_set}"
+            )
+        finally:
+            self._rm_wt(platform_repo, wt)
+
+    def test_uncommitted_forbidden_file_returns_false(self, fake_git_repo):
+        """Agent modifies a forbidden path WITHOUT committing → forbidden_files_unchanged
+        is False. This is the core bug — the old committed-only check missed this. (Fix A, case 2)"""
+        platform_repo, starting_commit = fake_git_repo
+        wt = self._make_wt(platform_repo, starting_commit, "uncommitted_forbidden")
+        try:
+            # Create forbidden.py in the working tree WITHOUT staging or committing
+            forbidden_abs = os.path.join(wt, "forbidden.py")
+            with open(forbidden_abs, "w") as f:
+                f.write("# forbidden but not committed\n")
+
+            # The old git diff --name-only starting_commit..HEAD would return empty
+            # (nothing committed) and incorrectly report forbidden_files_unchanged=True.
+            # The new working-tree approach must catch this.
+            result = _check_forbidden_unchanged(wt, starting_commit, ["forbidden.py"])
+            assert result is False, (
+                "Uncommitted modification to a forbidden file must be detected "
+                "(this was the core bug: the old committed-only check missed it)"
+            )
+        finally:
+            self._rm_wt(platform_repo, wt)
+
+    def test_only_allowed_paths_changed_passes_forbidden_check(self, fake_git_repo):
+        """Only allowed paths changed (no forbidden files touched) → True. (Fix A, case 3)"""
+        platform_repo, starting_commit = fake_git_repo
+        wt = self._make_wt(platform_repo, starting_commit, "allowed_only")
+        try:
+            # Create allowed files, leave forbidden.py untouched
+            allowed_abs = os.path.join(wt, "src", "allowed.py")
+            os.makedirs(os.path.dirname(allowed_abs), exist_ok=True)
+            with open(allowed_abs, "w") as f:
+                f.write("# allowed file\n")
+
+            result = _check_forbidden_unchanged(wt, starting_commit, ["forbidden.py"])
+            assert result is True, (
+                "Only allowed paths changed; forbidden check must return True"
+            )
+        finally:
+            self._rm_wt(platform_repo, wt)
+
+    def test_oracle_file_not_in_captured_diff(
+        self, fake_git_repo, canned_artifact, canned_task_def
+    ):
+        """File written AFTER the capture point (the oracle) does NOT appear in the
+        captured diff — proves ordering: capture-before-oracle. (Fix A, case 4)"""
+        platform_repo, _ = fake_git_repo
+        sentinel = canned_artifact["sentinel"]
+
+        # Use a T1 task so the oracle write is triggered
+        task_def_t1 = {**canned_task_def, "task_id": "T1"}
+
+        uploads: dict[str, str] = {}
+
+        def recording_upload(local, vol, profile):
+            with open(local) as f:
+                uploads[vol] = f.read()
+
+        def fake_oracle(repo, commit, path):
+            return "# oracle injected after agent\ndef test_oracle(): pass\n"
+
+        def stub_agent(worktree, prompt, model, *, max_minutes, max_tool_calls):
+            return _make_agent_result(sentinel=sentinel)
+
+        run_one(
+            task_def=task_def_t1,
+            arm="retrieved",
+            repeat=1,
+            artifact=canned_artifact,
+            platform_repo=platform_repo,
+            run_agent_fn=stub_agent,
+            write_row_fn=_noop_write,
+            upload_fn=recording_upload,
+            get_oracle_fn=fake_oracle,
+        )
+
+        diff_key = next((k for k in uploads if k.endswith("final.diff")), None)
+        assert diff_key is not None, "final.diff must have been uploaded"
+        diff_text = uploads[diff_key]
+
+        # The oracle fixture path must NOT appear in the agent diff, because the
+        # capture happened BEFORE the oracle was written into the worktree.
+        assert T1_ORACLE_FIXTURE_PATH not in diff_text, (
+            f"Oracle file {T1_ORACLE_FIXTURE_PATH!r} must not appear in the captured "
+            f"agent diff — capture must happen before oracle write (ordering bug)"
+        )
+
+    def test_run_one_uncommitted_forbidden_caught_in_normal_path(
+        self, fake_git_repo, canned_artifact, canned_task_def
+    ):
+        """run_one: agent creates a forbidden file WITHOUT committing → success=False,
+        forbidden_files_unchanged=False. End-to-end proof of Fix A via run_one."""
+        platform_repo, _ = fake_git_repo
+        sentinel = canned_artifact["sentinel"]
+
+        def stub_agent_writes_forbidden(worktree, prompt, model, *, max_minutes, max_tool_calls):
+            # Write forbidden.py in the working tree but DON'T commit it
+            with open(os.path.join(worktree, "forbidden.py"), "w") as f:
+                f.write("# forbidden, uncommitted\n")
+            return _make_agent_result(sentinel=sentinel)
+
+        row = run_one(
+            task_def=canned_task_def,
+            arm="retrieved",
+            repeat=1,
+            artifact=canned_artifact,
+            platform_repo=platform_repo,
+            run_agent_fn=stub_agent_writes_forbidden,
+            write_row_fn=_noop_write,
+            upload_fn=_noop_upload,
+        )
+
+        assert row.forbidden_files_unchanged is False, (
+            "Uncommitted forbidden file must be detected by the working-tree check"
+        )
+        assert row.success is False
+
+
+# ---------------------------------------------------------------------------
+# Tests: Fix B — raw stream-json uploaded as transcript.jsonl
+# ---------------------------------------------------------------------------
+
+class TestRawTranscriptUpload:
+    """Fix B: _upload_run_artifacts must upload raw stream-json events as
+    transcript.jsonl, not the reduced metric-trace."""
+
+    def test_transcript_contains_raw_event_types(
+        self, fake_git_repo, canned_artifact, canned_task_def
+    ):
+        """transcript.jsonl must contain raw assistant/user/result event dicts,
+        NOT reduced trace rows like {"type": "edit"}. (Fix B)"""
+        platform_repo, _ = fake_git_repo
+        sentinel = canned_artifact["sentinel"]
+
+        raw_events_stub = [
+            {
+                "type": "assistant",
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": f"ack {sentinel}"}],
+                },
+            },
+            {
+                "type": "user",
+                "message": {"role": "user", "content": []},
+            },
+            {
+                "type": "result",
+                "subtype": "success",
+                "usage": {"input_tokens": 10, "output_tokens": 5},
+            },
+        ]
+
+        uploads: dict[str, str] = {}
+
+        def recording_upload(local, vol, profile):
+            with open(local) as f:
+                uploads[vol] = f.read()
+
+        def stub_agent(worktree, prompt, model, *, max_minutes, max_tool_calls):
+            return AgentRunResult(
+                trace=[{"type": "edit", "target": "src/foo.py"}],
+                agent_echo=f"ack {sentinel}",
+                total_tool_calls=1,
+                tokens_in=10,
+                tokens_out=5,
+                elapsed_seconds=1.0,
+                final_commit=None,
+                exit_code=0,
+                stopped_reason="agent_exit",
+                raw_events=raw_events_stub,
+            )
+
+        run_one(
+            task_def=canned_task_def,
+            arm="retrieved",
+            repeat=1,
+            artifact=canned_artifact,
+            platform_repo=platform_repo,
+            run_agent_fn=stub_agent,
+            write_row_fn=_noop_write,
+            upload_fn=recording_upload,
+        )
+
+        # transcript.jsonl must have been uploaded
+        transcript_key = next(
+            (k for k in uploads if k.endswith("transcript.jsonl")), None
+        )
+        assert transcript_key is not None, "transcript.jsonl must be uploaded"
+
+        # trace.jsonl must also have been uploaded (reduced trace stored separately)
+        trace_key = next((k for k in uploads if k.endswith("trace.jsonl")), None)
+        assert trace_key is not None, "trace.jsonl must be uploaded"
+
+        # Parse transcript.jsonl lines
+        lines = [ln for ln in uploads[transcript_key].splitlines() if ln.strip()]
+        assert len(lines) >= 1, "transcript.jsonl must be non-empty"
+        events = [json.loads(ln) for ln in lines]
+
+        # Must contain raw stream-json event types
+        event_types = {e.get("type") for e in events}
+        assert event_types <= {"assistant", "user", "result"}, (
+            f"transcript.jsonl must contain raw event types (assistant/user/result); "
+            f"got {event_types}"
+        )
+        # Must NOT contain reduced trace row types
+        assert "edit" not in event_types, (
+            "transcript.jsonl must not contain reduced trace rows like {type: edit}"
+        )
+        assert "read" not in event_types
+        assert "test" not in event_types
+
+        # trace.jsonl must contain the reduced metric-trace
+        trace_lines = [ln for ln in uploads[trace_key].splitlines() if ln.strip()]
+        trace_events = [json.loads(ln) for ln in trace_lines]
+        trace_types = {e.get("type") for e in trace_events}
+        assert "edit" in trace_types, (
+            "trace.jsonl must contain reduced trace rows; got no 'edit' row"
+        )
+
+    def test_trace_path_points_to_transcript_jsonl(
+        self, fake_git_repo, canned_artifact, canned_task_def
+    ):
+        """EvalRunRow.trace_path must point to transcript.jsonl (raw events). (Fix B)"""
+        platform_repo, _ = fake_git_repo
+        sentinel = canned_artifact["sentinel"]
+
+        def stub_upload(local, vol, profile):
+            pass  # noop but don't raise
+
+        def stub_agent(worktree, prompt, model, *, max_minutes, max_tool_calls):
+            return _make_agent_result(sentinel=sentinel, raw_events=[
+                {"type": "result", "subtype": "success", "usage": {}}
+            ])
+
+        row = run_one(
+            task_def=canned_task_def,
+            arm="retrieved",
+            repeat=1,
+            artifact=canned_artifact,
+            platform_repo=platform_repo,
+            run_agent_fn=stub_agent,
+            write_row_fn=_noop_write,
+            upload_fn=stub_upload,
+        )
+
+        assert row.trace_path is not None
+        assert row.trace_path.endswith("transcript.jsonl"), (
+            f"trace_path must point to transcript.jsonl (raw events); got {row.trace_path!r}"
         )

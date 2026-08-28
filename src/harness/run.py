@@ -31,7 +31,7 @@ import shutil
 import subprocess
 import tempfile
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Callable, Optional
 
@@ -151,6 +151,10 @@ class AgentRunResult:
     exit_code: int
     stopped_reason: Optional[str]
     """'budget_minutes' | 'budget_tool_calls' | 'agent_exit' | None"""
+
+    raw_events: list[dict] = field(default_factory=list)
+    """Raw parsed stream-json events emitted by the agent subprocess.
+    Uploaded as transcript.jsonl verbatim; the adapted metric-trace is separate."""
 
 
 @dataclass
@@ -392,39 +396,64 @@ def _run_cmd(cmd: str, cwd: str, timeout: int = 120) -> tuple[bool, str]:
     return r.returncode == 0, r.stdout + r.stderr
 
 
+def _capture_working_tree_state(worktree: str, starting_commit: str) -> tuple[str, set[str]]:
+    """Stage all working-tree changes and return (diff_text, changed_paths_set).
+
+    Runs ``git add -A`` once so that untracked new files the agent created are
+    included, then captures both the full diff and the changed-path set via
+    ``--cached`` against starting_commit.
+
+    IMPORTANT: must be called BEFORE any oracle/test-fixture files are written
+    into the worktree, otherwise those files appear in the recorded agent diff.
+    """
+    subprocess.run(["git", "add", "-A"], cwd=worktree, capture_output=True)
+    diff_r = subprocess.run(
+        ["git", "diff", "--cached", starting_commit],
+        cwd=worktree, capture_output=True, text=True,
+    )
+    names_r = subprocess.run(
+        ["git", "diff", "--cached", "--name-only", starting_commit],
+        cwd=worktree, capture_output=True, text=True,
+    )
+    diff_text = diff_r.stdout if diff_r.returncode == 0 else ""
+    changed = set(names_r.stdout.strip().splitlines()) if names_r.returncode == 0 else set()
+    return diff_text, changed
+
+
 def _get_final_diff(worktree: str, starting_commit: str) -> str:
-    """Return git diff between starting_commit and HEAD (committed changes)."""
-    r = subprocess.run(
-        ["git", "diff", starting_commit, "HEAD"],
-        cwd=worktree, capture_output=True, text=True,
-    )
-    if r.returncode == 0:
-        return r.stdout
-    # Fallback: uncommitted diff vs the commit
-    r2 = subprocess.run(
-        ["git", "diff", starting_commit],
-        cwd=worktree, capture_output=True, text=True,
-    )
-    return r2.stdout
+    """Return working-tree diff vs starting_commit, including new untracked files.
+
+    Delegates to ``_capture_working_tree_state`` (runs ``git add -A`` then
+    ``git diff --cached <starting_commit>``) so untracked files the agent created
+    without committing are included.  The old committed-only approach
+    (``git diff starting_commit HEAD``) missed those files.
+    """
+    diff_text, _ = _capture_working_tree_state(worktree, starting_commit)
+    return diff_text
 
 
 def _check_forbidden_unchanged(
     worktree: str,
     starting_commit: str,
     forbidden_files: list[str],
+    *,
+    _precomputed_changed: Optional[set[str]] = None,
 ) -> bool:
-    """Return True iff none of forbidden_files appear in the committed diff.
+    """Return True iff none of forbidden_files appear in the working-tree diff.
 
-    Uses ``git diff --name-only starting_commit..HEAD`` per the SPEC.
+    Uses ``git add -A`` + ``git diff --cached --name-only`` to catch uncommitted
+    changes including new untracked files the agent may have created.  The old
+    ``git diff --name-only starting_commit..HEAD`` was unsound: an agent that
+    modified a forbidden file without committing would pass the check.
+
+    Pass ``_precomputed_changed`` (the set from a prior ``_capture_working_tree_state``
+    call) to reuse an already-staged capture and avoid a redundant ``git add -A``.
     """
     if not forbidden_files:
         return True
-    r = subprocess.run(
-        ["git", "diff", "--name-only", f"{starting_commit}..HEAD"],
-        cwd=worktree, capture_output=True, text=True,
-    )
-    changed = set(r.stdout.strip().splitlines())
-    return not any(f in changed for f in forbidden_files)
+    if _precomputed_changed is None:
+        _, _precomputed_changed = _capture_working_tree_state(worktree, starting_commit)
+    return not any(f in _precomputed_changed for f in forbidden_files)
 
 
 def get_oracle_content(platform_repo: str, commit: str, file_path: str) -> str:
@@ -687,6 +716,7 @@ def run_agent(
         final_commit=final_commit,
         exit_code=exit_code,
         stopped_reason=stopped_reason,
+        raw_events=events,
     )
 
 
@@ -696,14 +726,24 @@ def run_agent(
 
 def _upload_run_artifacts(
     run_id: str,
+    raw_events: list[dict],
     trace: list[dict],
-    worktree_path: str,
-    starting_commit: str,
+    final_diff: str,
     runs_volume_base: str,
     profile: str,
     upload_fn: Callable,
 ) -> tuple[Optional[str], Optional[str]]:
-    """Upload transcript.jsonl and final.diff to the UC Volume.
+    """Upload transcript.jsonl (raw stream-json), trace.jsonl, and final.diff to the UC Volume.
+
+    transcript.jsonl contains the raw agent stream-json events (one JSON object
+    per line) — the full assistant/user/result event stream, suitable for
+    interpretability and SPEC §8 recorded-trace fallback.
+
+    trace.jsonl contains the reduced metric-trace rows ({"type","target",...}).
+
+    ``final_diff`` must be the pre-captured working-tree diff (from
+    ``_capture_working_tree_state``), gathered BEFORE any oracle files are
+    written into the worktree.
 
     Returns ``(trace_path, final_diff_path)`` on success, or ``(None, None)``
     if the upload fails.  Upload failure is NON-FATAL but prints a visible
@@ -715,12 +755,18 @@ def _upload_run_artifacts(
     trace_path: Optional[str] = None
     final_diff_path: Optional[str] = None
 
+    # transcript.jsonl: raw stream-json events, one JSON object per line
+    transcript_jsonl = "\n".join(json.dumps(e) for e in raw_events) + "\n"
+    # trace.jsonl: reduced metric-trace rows
     trace_jsonl = "\n".join(json.dumps(e) for e in trace) + "\n"
-    final_diff = _get_final_diff(worktree_path, starting_commit)
 
+    tmp_transcript: Optional[str] = None
     tmp_trace: Optional[str] = None
     tmp_diff: Optional[str] = None
     try:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False) as f:
+            f.write(transcript_jsonl)
+            tmp_transcript = f.name
         with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False) as f:
             f.write(trace_jsonl)
             tmp_trace = f.name
@@ -728,11 +774,13 @@ def _upload_run_artifacts(
             f.write(final_diff)
             tmp_diff = f.name
 
-        vol_trace = f"{runs_volume_base}/{run_id}/transcript.jsonl"
+        vol_transcript = f"{runs_volume_base}/{run_id}/transcript.jsonl"
+        vol_trace = f"{runs_volume_base}/{run_id}/trace.jsonl"
         vol_diff = f"{runs_volume_base}/{run_id}/final.diff"
+        upload_fn(tmp_transcript, vol_transcript, profile)
         upload_fn(tmp_trace, vol_trace, profile)
         upload_fn(tmp_diff, vol_diff, profile)
-        trace_path = vol_trace
+        trace_path = vol_transcript
         final_diff_path = vol_diff
     except Exception as exc:
         print(
@@ -741,7 +789,7 @@ def _upload_run_artifacts(
         )
         # trace_path / final_diff_path stay None; failure is observable in logs
     finally:
-        for p in (tmp_trace, tmp_diff):
+        for p in (tmp_transcript, tmp_trace, tmp_diff):
             if p:
                 try:
                     os.unlink(p)
@@ -922,11 +970,16 @@ def run_one(
         # forbidden-files state from git and UPLOAD whatever partial trace+diff
         # exists — exactly the data you'd need to diagnose a breached run.
         if agent_result.stopped_reason == "budget_minutes":
+            # Capture working-tree state (includes uncommitted / untracked files)
+            _final_diff, _changed_set = _capture_working_tree_state(
+                worktree_path, starting_commit
+            )
             _forbidden_ok = _check_forbidden_unchanged(
-                worktree_path, starting_commit, forbidden_files
+                worktree_path, starting_commit, forbidden_files,
+                _precomputed_changed=_changed_set,
             )
             _trace_path, _diff_path = _upload_run_artifacts(
-                run_id, agent_result.trace, worktree_path, starting_commit,
+                run_id, agent_result.raw_events, agent_result.trace, _final_diff,
                 runs_volume_base, profile, _upload,
             )
             row = _make_failure_row(
@@ -946,11 +999,16 @@ def run_one(
             return row
 
         if agent_result.total_tool_calls > max_tool_calls:
+            # Capture working-tree state (includes uncommitted / untracked files)
+            _final_diff, _changed_set = _capture_working_tree_state(
+                worktree_path, starting_commit
+            )
             _forbidden_ok = _check_forbidden_unchanged(
-                worktree_path, starting_commit, forbidden_files
+                worktree_path, starting_commit, forbidden_files,
+                _precomputed_changed=_changed_set,
             )
             _trace_path, _diff_path = _upload_run_artifacts(
-                run_id, agent_result.trace, worktree_path, starting_commit,
+                run_id, agent_result.raw_events, agent_result.trace, _final_diff,
                 runs_volume_base, profile, _upload,
             )
             row = _make_failure_row(
@@ -968,6 +1026,17 @@ def run_one(
             )
             _write_row(row, warehouse_id, profile)
             return row
+
+        # ── Pre-capture: working-tree state BEFORE oracle write ─────────────
+        # Must happen here — after both budget checks (which return early) but
+        # BEFORE the T1 oracle file is written into the worktree (Step 7).
+        # git add -A stages new/untracked files; --cached diff vs starting_commit
+        # captures the full agent diff including files the agent never committed.
+        # Reusing the same staged snapshot for both the diff text and the
+        # forbidden-files check avoids a redundant git add -A.
+        _final_diff, _changed_set = _capture_working_tree_state(
+            worktree_path, starting_commit
+        )
 
         # ── Step 7: T1 oracle overwrite (BEFORE acceptance) ─────────────────
         # Contamination invariant: oracle is kept OUT of agent context during run;
@@ -1013,8 +1082,11 @@ def run_one(
         else:
             regression_tests_passed = None  # null = no regression cmd = not a failure
 
+        # Use the pre-captured _changed_set (gathered before oracle write) so
+        # oracle and acceptance-run artifacts don't pollute the forbidden check.
         forbidden_files_unchanged = _check_forbidden_unchanged(
-            worktree_path, starting_commit, forbidden_files
+            worktree_path, starting_commit, forbidden_files,
+            _precomputed_changed=_changed_set,
         )
 
         reg_ok = regression_tests_passed is None or regression_tests_passed
@@ -1026,8 +1098,10 @@ def run_one(
         fail_cycles = failed_test_cycles(trace)
 
         # ── Step 10: upload trace + diff via shared helper ───────────────────
+        # Pass pre-captured _final_diff so oracle/acceptance files (written after
+        # the capture point) are not included in the uploaded agent diff.
         trace_path, final_diff_path = _upload_run_artifacts(
-            run_id, trace, worktree_path, starting_commit,
+            run_id, agent_result.raw_events, trace, _final_diff,
             runs_volume_base, profile, _upload,
         )
 
