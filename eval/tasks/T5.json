@@ -1,0 +1,29 @@
+{
+  "id": "T5",
+  "question": "When carrying image provenance through exemplar frame, crop, and box outputs, which fields and nullability conventions should I apply without breaking video rows?",
+  "expected_answer_elements": [
+    "Add source_kind and source_ref as nullable string fields to exemplar_frames, exemplar_frame_crops, and exemplar_frame_boxes.",
+    "Use source_kind values video or image.",
+    "Use the video sequence identifier as source_ref for video rows and a mission-and-image composite reference for image rows.",
+    "Make source_frame_index and source_timestamp_ms nullable so image-origin rows can carry null temporal values while video rows continue to populate integers.",
+    "For box row construction, propagate source_kind and source_ref when present and default them to None when the upstream projection does not include them.",
+    "Keep source_kind and source_ref as additive optional fields placed after required fields so required FrameOutput constructor arguments remain required."
+  ],
+  "grounding": {
+    "source_file": "data/raw_abdullah_tab.csv",
+    "conversation_ids": [
+      "137d36c8-f4cb-4a3f-b594-b116295c627c",
+      "69297c23-e418-45ed-a4b7-675369be0623"
+    ],
+    "repo_files": [],
+    "support": [
+      "The UES3 conversation defines source_kind/source_ref semantics across all three output tables and nullable temporal fields.",
+      "Its follow-up preserves required FrameOutput fields by moving optional provenance fields after the required group.",
+      "The boxes follow-up adds nullable strings and rec.get-based None defaults in box row construction."
+    ]
+  },
+  "memory_type": "code_convention",
+  "task_area": "output_schema",
+  "rationale": "Context prevents schema drift, invented sentinel timestamps, and accidental weakening of required dataclass fields.",
+  "safety": "No personal identifiers, external customer references, or credentials are included."
+}

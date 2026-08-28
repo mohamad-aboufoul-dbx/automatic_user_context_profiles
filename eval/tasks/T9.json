@@ -1,0 +1,28 @@
+{
+  "id": "T9",
+  "question": "What house style should I use when rewriting the Universal Exemplar Selection ticket document to match the established markdown ticket format?",
+  "expected_answer_elements": [
+    "Start with a metadata header covering the epic, package, design references, ownership or review, and approach.",
+    "Add a subtask map table with columns for key, title, type, effort, status, and section.",
+    "Keep the dependency graph as a code block and place shared cross-ticket rules in a numbered section zero.",
+    "Format each ticket as a numbered heading followed by What we want, Scope bullets, Acceptance checkboxes, and dependency lines such as Blocked by and Blocks.",
+    "Move open questions into a numbered final section.",
+    "Preserve the original substance and reorganize it without inventing new requirements."
+  ],
+  "grounding": {
+    "source_file": "data/raw_abdullah_tab.csv",
+    "conversation_ids": [
+      "4af28934-83c7-46e9-b786-9c30219847be"
+    ],
+    "repo_files": [],
+    "support": [
+      "The conversation compares the target ticket file with an established markdown example.",
+      "The response records the exact header, table, dependency graph, section-zero, per-ticket, and open-question structure.",
+      "It explicitly says to preserve all original facts."
+    ]
+  },
+  "memory_type": "code_convention",
+  "task_area": "documentation",
+  "rationale": "The format is a project-specific documentation convention; retrieved context avoids another discovery pass across reference ticket files.",
+  "safety": "References are genericized and contain no client names, user paths, or credentials."
+}
